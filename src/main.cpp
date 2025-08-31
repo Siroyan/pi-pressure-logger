@@ -176,6 +176,15 @@ void loop() {
     write_idx = (write_idx + 1) % WAVE_W;
   }
 
+  // 1–5Vの水平グリッド（5本）
+  for (int i = 0; i <= 4; ++i) {
+    float v = V_MIN + i * (V_MAX - V_MIN) / 4.0f;
+    int y = v_to_y(v);
+    M5.Display.drawLine(WAVE_X, y, WAVE_X + WAVE_W - 1, y, 0x4208 /*薄い灰*/);
+    M5.Display.setCursor(WAVE_X + 2, y - 6);
+    M5.Display.printf("%.1fV", v);
+  }
+
   // ボタンAでフレーム再描画（画面が乱れた時のリフレッシュ）
   M5.update();
   if (M5.BtnA.wasPressed()) {
