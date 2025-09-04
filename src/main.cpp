@@ -1,193 +1,95 @@
-// M5StickC Plus2 + ADC Hat (ADS1110) Voltage Logger @240Hz
-// - Input: 1–5 V (ADC Hat 0–12 Vレンジを使用。簡易係数でスケール)
-// - Sample rate: 240 SPS (ADS1110 continuous mode)
-// - Display: 波形を横240px（=約1秒分）、縦135pxに描画（横向き）
+#include <M5Stack.h>
+#include <Adafruit_ADS1X15.h>
 
-#include <M5StickCPlus2.h>
-#include <Wire.h>
+Adafruit_ADS1015 ads;
+const float voltage_scale = 5.7;
 
-// ====== ADS1110 (ADC Hat V1.1) ======
-static const uint8_t ADS1110_ADDR = 0x48;  // ADC Hat デフォルト
-// コンフィグレジスタ（連続変換, 240SPS, PGA=1）
-// bit7 ST/DRDY(任意=1), bit6-5=0, bit4 SC=0(continuous), bit3-2 DR=00(240SPS), bit1-0 PGA=00(×1)
-static const uint8_t ADS1110_CFG_240SPS = 0x80; // 1000 0000b
+const int duration_sec = 20;
+const int sampling_rate = 100;
+const int buffer_size = duration_sec * sampling_rate;
 
-// 追加（回路定数）
-static const float R_TOP = 510000.0f;   // 510k
-static const float R_BOT = 100000.0f;   // 100k
-static const float VREF  = 2.048f;
+float ch0_buffer[buffer_size] = {0};
+float ch1_buffer[buffer_size] = {0};
+int buf_index = 0;
 
-// 画面・波形設定
-static const int WAVE_W = 240; // 横向きで幅240px（=約1秒分）
-static const int WAVE_H = 100; // 上にグラフ領域100px確保
-static const int WAVE_X = 0;
-static const int WAVE_Y = 20;
-static const float V_MIN = 1.0f;
-static const float V_MAX = 5.0f;
+unsigned long last_sample_time = 0;
+const int interval_ms = 1000 / sampling_rate;
 
-// バッファ
-float samples[WAVE_W];
-int write_idx = 0;
+void drawGraphFrame() {
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.drawRect(10, 20, 300, 80, WHITE);   // CH0
+  M5.Lcd.drawRect(10, 120, 300, 80, WHITE);  // CH1
 
-// ==== I2C: StickC Plus2 HAT側（SDA=G32, SCL=G33） ====
-static const int PIN_SDA = 0;
-static const int PIN_SCL = 26;
+  M5.Lcd.setCursor(320, 20);  M5.Lcd.print("CH0");
+  M5.Lcd.setCursor(320, 120); M5.Lcd.print("CH1");
 
-// ==== 240Hz制御 ====
-static const uint32_t SAMPLE_INTERVAL_US = 1000000UL / 240; // ≒4167us
-uint32_t next_us = 0;
+  M5.Lcd.setCursor(5, 10);    M5.Lcd.printf("12V");
+  M5.Lcd.setCursor(5, 90);    M5.Lcd.printf("0V");
+  M5.Lcd.setCursor(5, 110);   M5.Lcd.printf("12V");
+  M5.Lcd.setCursor(5, 180);   M5.Lcd.printf("0V");
 
-// ADS1110初期化
-bool ads1110_begin() {
-  Wire.beginTransmission(ADS1110_ADDR);
-  Wire.write(ADS1110_CFG_240SPS);
-  if (Wire.endTransmission() != 0) return false;
-  // 変換が回り始めるのを少し待つ
-  delay(10);
-  return true;
+  M5.Lcd.setCursor(10, 210);
+  M5.Lcd.printf("CH0:      V    CH1:      V");
 }
 
-// ADS1110から最新値を読む（出力2byte + cfg1byte）
-// ST/DRDYが0=新データ、1=既読データ（datasheet記載）
-bool ads1110_readRaw(int16_t &raw, uint8_t &cfg) {
-  Wire.requestFrom((int)ADS1110_ADDR, 3);
-  if (Wire.available() < 3) return false;
-  uint8_t msb = Wire.read();
-  uint8_t lsb = Wire.read();
-  cfg = Wire.read();
-  raw = (int16_t)((msb << 8) | lsb);
-  return true;
+void drawOnePoint(int i, float v0, float v1) {
+  // 0V〜12Vに制限
+  v0 = constrain(v0, 0.0, 12.0);
+  v1 = constrain(v1, 0.0, 12.0);
+
+  int x = 10 + (i * 300 / buffer_size);
+
+  // 過去の波形をしっかり消去（上下端も含めて）
+  M5.Lcd.fillRect(x, 19, 1, 82, BLACK);   // CH0
+  M5.Lcd.fillRect(x, 119, 1, 82, BLACK);  // CH1
+
+  // ピクセル描画（12V = 上, 0V = 下）
+  int y0 = 20 + 80 - (v0 / 12.0f) * 80;
+  int y1 = 120 + 80 - (v1 / 12.0f) * 80;
+
+  M5.Lcd.drawPixel(x, y0, GREEN);
+  M5.Lcd.drawPixel(x, y1, CYAN);
 }
 
-// 置き換え
-float convert_to_volts(int16_t code, uint8_t cfg) {
-  // (1) データレートに応じたフルスケールカウント
-  const uint8_t dr = (cfg >> 2) & 0x03; // 00:240, 01:60, 10:30, 11:15 SPS
-  static const int FS_COUNTS[4] = {2048, 8192, 16384, 32768};
-  // (2) PGA
-  const float gain = 1 << (cfg & 0x03); // 00:×1,01:×2,10:×4,11:×8
-  // (3) ADC入力電圧（右詰めコードを正しい分母で）
-  const float v_adc = (float)code * (VREF / (gain * FS_COUNTS[dr]));
-  // (4) 端子電圧へ（分圧補正）
-  return v_adc * ((R_TOP + R_BOT) / R_BOT); // ≒ ×6.1
-}
+void drawVoltageText(float v0, float v1) {
+  M5.Lcd.fillRect(45, 210, 60, 10, BLACK);
+  M5.Lcd.fillRect(175, 210, 60, 10, BLACK);
 
-// 値を[1–5V]にクリップしてY座標へ
-int v_to_y(float v) {
-  float vc = v;
-  if (vc < V_MIN) vc = V_MIN;
-  if (vc > V_MAX) vc = V_MAX;
-  // 上が5Vで下が1Vになるように反転マッピング
-  float t = (vc - V_MIN) / (V_MAX - V_MIN); // 0..1
-  int y = WAVE_Y + WAVE_H - 1 - (int)(t * (WAVE_H - 1));
-  return y;
-}
+  M5.Lcd.setCursor(45, 210);
+  M5.Lcd.printf("%.2f", v0);
 
-// 波形を1pxスクロール描画（軽量）
-// - 背景スクロールは fillRect で横一列を消してから新ドット描画
-void draw_wave_step(int newY) {
-  // 左へ1pxスクロール
-  M5.Display.scroll(-1, 0);
-  // 右端の縦帯をクリア
-  M5.Display.fillRect(WAVE_X + WAVE_W - 1, WAVE_Y, 1, WAVE_H, BLACK);
-  // 新しい点を右端に描画
-  M5.Display.drawPixel(WAVE_X + WAVE_W - 1, newY, GREEN);
-}
-
-// 目盛りと枠を再描画（起動時のみ）
-void draw_frame() {
-  M5.Display.fillScreen(BLACK);
-  M5.Display.setTextColor(WHITE, BLACK);
-  M5.Display.setTextSize(1);
-  // タイトル
-  M5.Display.setCursor(4, 2);
-  M5.Display.print("Voltage Logger 240Hz (1-5V)");
-
-  // 枠
-  M5.Display.drawRect(WAVE_X, WAVE_Y, WAVE_W, WAVE_H, DARKGREY);
-  // 1–5Vの水平グリッド（5本）
-  for (int i = 0; i <= 4; ++i) {
-    float v = V_MIN + i * (V_MAX - V_MIN) / 4.0f;
-    int y = v_to_y(v);
-    M5.Display.drawLine(WAVE_X, y, WAVE_X + WAVE_W - 1, y, 0x4208 /*薄い灰*/);
-    M5.Display.setCursor(WAVE_X + 2, y - 6);
-    M5.Display.printf("%.1fV", v);
-  }
-  // 右端の凡例エリア（下段に数値）
-  M5.Display.fillRect(0, WAVE_Y + WAVE_H + 1, 240, 135 - (WAVE_Y + WAVE_H + 1), BLACK);
+  M5.Lcd.setCursor(175, 210);
+  M5.Lcd.printf("%.2f", v1);
 }
 
 void setup() {
-  Serial.begin(9600);
+  M5.begin();
+  M5.Lcd.setRotation(1);
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.setTextSize(1);
 
-  auto cfg = M5.config();
-  M5.begin(cfg);
-  // 画面を横向き（長辺=240）に
-  M5.Display.setRotation(1);
+  ads.begin();
+  ads.setDataRate(RATE_ADS1015_3300SPS);
+  ads.setGain(GAIN_ONE);
 
-  Wire.begin(PIN_SDA, PIN_SCL, 400000); // 400kHz I2C
-
-  if (!ads1110_begin()) {
-    M5.Display.setRotation(0);
-    M5.Display.fillScreen(BLACK);
-    M5.Display.setTextColor(RED, BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(8, 50);
-    M5.Display.println("ADS1110 not found!");
-    while (1) { delay(1000); }
-  }
-
-  draw_frame();
-
-  // バッファ初期化
-  for (int i = 0; i < WAVE_W; ++i) samples[i] = NAN;
-
-  next_us = micros();
+  drawGraphFrame();
 }
 
 void loop() {
-  // 240Hz間隔を維持
-  const uint32_t now = micros();
-  if ((int32_t)(now - next_us) < 0) return;
-  next_us += SAMPLE_INTERVAL_US;
+  unsigned long now = millis();
+  if (now - last_sample_time >= interval_ms) {
+    last_sample_time = now;
 
-  // ADC読み
-  int16_t code;
-  uint8_t cfg;
-  if (!ads1110_readRaw(code, cfg)) return;
+    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
+    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
 
-  Serial.println(cfg);
-  // ST/DRDY==0 なら新データ
-  if ((cfg & 0x80) == 0) {
-    float vin = convert_to_volts(code, cfg);
+    ch0_buffer[buf_index] = v0;
+    ch1_buffer[buf_index] = v1;
 
-    // 表示用の数値（下段）
-    M5.Display.fillRect(120, WAVE_Y + WAVE_H + 6, 116, 12, BLACK);
-    M5.Display.setTextColor(YELLOW, BLACK);
-    M5.Display.setCursor(120, WAVE_Y + WAVE_H + 6);
-    M5.Display.printf("V=%.3f", vin);
+    drawOnePoint(buf_index, v0, v1);
+    drawVoltageText(v0, v1);
 
-    // 波形1ステップ描画
-    int y = v_to_y(vin);
-    draw_wave_step(y);
-
-    // サンプル保持（必要なら保存/記録用に使う）
-    samples[write_idx] = vin;
-    write_idx = (write_idx + 1) % WAVE_W;
-  }
-
-  // 1–5Vの水平グリッド（5本）
-  for (int i = 0; i <= 4; ++i) {
-    float v = V_MIN + i * (V_MAX - V_MIN) / 4.0f;
-    int y = v_to_y(v);
-    M5.Display.drawLine(WAVE_X, y, WAVE_X + WAVE_W - 1, y, 0x4208 /*薄い灰*/);
-    M5.Display.setCursor(WAVE_X + 2, y - 6);
-    M5.Display.printf("%.1fV", v);
-  }
-
-  // ボタンAでフレーム再描画（画面が乱れた時のリフレッシュ）
-  M5.update();
-  if (M5.BtnA.wasPressed()) {
-    draw_frame();
+    buf_index = (buf_index + 1) % buffer_size;
   }
 }
