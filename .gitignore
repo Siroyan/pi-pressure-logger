@@ -1,2 +1,5 @@
 .pio
 .vscode/*
+
+# Secure folder containing AWS certificates and sensitive credentials
+secure/

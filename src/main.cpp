@@ -2,6 +2,10 @@
 #include <Adafruit_ADS1X15.h>
 #include <SD.h>
 #include <FS.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include "../secure/aws_certificates.h"
 
 Adafruit_ADS1015 ads;
 const float voltage_scale = 5.7;
@@ -21,6 +25,22 @@ bool sd_available = false;
 String log_filename = "";
 unsigned long session_start_time = 0;
 bool recording = false;
+
+// WiFi and AWS IoT Core configuration
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+const char* aws_iot_endpoint = "YOUR_AWS_IOT_ENDPOINT.iot.region.amazonaws.com";
+const int aws_iot_port = 8883;
+const char* aws_iot_topic = "pressure_logger/data";
+const char* thing_name = "PressureLogger";
+
+bool wifi_connected = false;
+bool mqtt_connected = false;
+WiFiClientSecure wifiClientSecure;
+PubSubClient client(wifiClientSecure);
+unsigned long last_mqtt_attempt = 0;
+const int mqtt_retry_interval = 5000;
+
 
 unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
@@ -120,11 +140,80 @@ void stopRecording() {
   }
 }
 
-void drawSDStatus() {
-  M5.Lcd.fillRect(30, 225, 100, 10, BLACK);  // Clear area
+void initWiFi() {
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  
+  unsigned long start_time = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 10000) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    wifi_connected = true;
+    Serial.println();
+    Serial.println("WiFi connected!");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    wifi_connected = false;
+    Serial.println();
+    Serial.println("WiFi connection failed!");
+  }
+}
+
+void setupAWSIoT() {
+  // Set certificates from header file
+  wifiClientSecure.setCACert(aws_root_ca);
+  wifiClientSecure.setCertificate(device_cert);
+  wifiClientSecure.setPrivateKey(device_key);
+  
+  Serial.println("AWS IoT certificates loaded");
+}
+
+void reconnectMQTT() {
+  if (!wifi_connected) return;
+  
+  if (millis() - last_mqtt_attempt < mqtt_retry_interval) return;
+  last_mqtt_attempt = millis();
+  
+  Serial.print("Attempting AWS IoT connection...");
+  
+  if (client.connect(thing_name)) {
+    mqtt_connected = true;
+    Serial.println("connected to AWS IoT Core");
+  } else {
+    mqtt_connected = false;
+    Serial.print("failed, rc=");
+    Serial.print(client.state());
+    Serial.println(" try again in 5 seconds");
+  }
+}
+
+void publishMQTTData(float v0, float v1) {
+  if (!mqtt_connected) return;
+  
+  String payload = "{";
+  payload += "\"timestamp\":" + String(millis());
+  payload += ",\"device\":\"" + String(thing_name) + "\"";
+  payload += ",\"ch0\":" + String(v0, 3);
+  payload += ",\"ch1\":" + String(v1, 3);
+  payload += "}";
+  
+  if (client.publish(aws_iot_topic, payload.c_str())) {
+    Serial.println("Data published to AWS IoT: " + payload);
+  } else {
+    Serial.println("Failed to publish data");
+  }
+}
+
+void drawConnectionStatus() {
+  M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
   
+  // SD Status
   if (sd_available) {
     if (recording) {
       M5.Lcd.setTextColor(RED);
@@ -137,6 +226,31 @@ void drawSDStatus() {
     M5.Lcd.setTextColor(RED);
     M5.Lcd.print("SD:ERR");
   }
+  
+  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.print(" ");
+  
+  // WiFi Status
+  if (wifi_connected) {
+    M5.Lcd.setTextColor(GREEN);
+    M5.Lcd.print("WiFi");
+  } else {
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.print("WiFi!");
+  }
+  
+  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.print(" ");
+  
+  // AWS IoT Status
+  if (mqtt_connected) {
+    M5.Lcd.setTextColor(GREEN);
+    M5.Lcd.print("AWS");
+  } else {
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.print("AWS!");
+  }
+  
   M5.Lcd.setTextColor(WHITE);
 }
 
@@ -185,9 +299,16 @@ void setup() {
 
   // Initialize SD card
   sd_available = initializeSD();
+  
+  // Initialize WiFi
+  initWiFi();
+  
+  // Setup AWS IoT certificates and connection
+  setupAWSIoT();
+  client.setServer(aws_iot_endpoint, aws_iot_port);
 
   drawLabels();
-  drawSDStatus();
+  drawConnectionStatus();
 }
 
 void loop() {
@@ -200,8 +321,14 @@ void loop() {
     } else {
       startRecording();
     }
-    drawSDStatus();
+    drawConnectionStatus();
   }
+  
+  // Maintain MQTT connection
+  if (!client.connected()) {
+    reconnectMQTT();
+  }
+  client.loop();
   
   unsigned long now = millis();
   if (now - last_sample_time >= interval_ms) {
@@ -218,6 +345,9 @@ void loop() {
     
     // Log data to SD card
     logData(v0, v1);
+    
+    // Publish data via MQTT
+    publishMQTTData(v0, v1);
 
     buf_index = (buf_index + 1) % buffer_size;
   }
