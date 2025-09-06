@@ -1,5 +1,7 @@
 #include <M5Stack.h>
 #include <Adafruit_ADS1X15.h>
+#include <SD.h>
+#include <FS.h>
 
 Adafruit_ADS1015 ads;
 const float voltage_scale = 5.7;
@@ -14,6 +16,11 @@ int buf_index = 0;
 
 float last_displayed_v0 = -1.0;
 float last_displayed_v1 = -1.0;
+
+bool sd_available = false;
+String log_filename = "";
+unsigned long session_start_time = 0;
+bool recording = false;
 
 unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
@@ -50,6 +57,89 @@ void drawLabels() {
   M5.Lcd.setTextColor(WHITE);  // Reset to white
 }
 
+bool initializeSD() {
+  if (!SD.begin()) {
+    Serial.println("SD Card Mount Failed");
+    return false;
+  }
+  
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE) {
+    Serial.println("No SD card attached");
+    return false;
+  }
+  
+  Serial.println("SD Card initialized successfully");
+  return true;
+}
+
+String createLogFile() {
+  // Create filename with timestamp
+  unsigned long timestamp = millis();
+  String filename = "/pressure_log_" + String(timestamp) + ".csv";
+  
+  File file = SD.open(filename.c_str(), FILE_WRITE);
+  if (file) {
+    // Write CSV header
+    file.println("Timestamp(ms),CH0(V),CH1(V)");
+    file.close();
+    Serial.println("Created log file: " + filename);
+    return filename;
+  }
+  
+  Serial.println("Failed to create log file");
+  return "";
+}
+
+void logData(float v0, float v1) {
+  if (!sd_available || log_filename == "" || !recording) return;
+  
+  File file = SD.open(log_filename.c_str(), FILE_APPEND);
+  if (file) {
+    unsigned long timestamp = millis() - session_start_time;
+    file.println(String(timestamp) + "," + String(v0, 3) + "," + String(v1, 3));
+    file.close();
+  }
+}
+
+void startRecording() {
+  if (!sd_available) return;
+  
+  log_filename = createLogFile();
+  if (log_filename != "") {
+    recording = true;
+    session_start_time = millis();
+    Serial.println("Recording started");
+  }
+}
+
+void stopRecording() {
+  if (recording) {
+    recording = false;
+    Serial.println("Recording stopped");
+  }
+}
+
+void drawSDStatus() {
+  M5.Lcd.fillRect(30, 225, 100, 10, BLACK);  // Clear area
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setCursor(30, 225);
+  
+  if (sd_available) {
+    if (recording) {
+      M5.Lcd.setTextColor(RED);
+      M5.Lcd.print("SD:REC");
+    } else {
+      M5.Lcd.setTextColor(GREEN);
+      M5.Lcd.print("SD:OK!");
+    }
+  } else {
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.print("SD:ERR");
+  }
+  M5.Lcd.setTextColor(WHITE);
+}
+
 void drawOnePoint(int i, float v0, float v1) {
   // 0V〜12Vに制限
   v0 = constrain(v0, 0.0, 12.0);
@@ -71,12 +161,11 @@ void drawOnePoint(int i, float v0, float v1) {
 
 void drawVoltageText(float v0, float v1) {
   if (abs(v0 - last_displayed_v0) > 0.01 || abs(v1 - last_displayed_v1) > 0.01) {
-    M5.Lcd.fillRect(30, 210, 280, 20, BLACK);
+    M5.Lcd.fillRect(30, 210, 250, 15, BLACK);
     
-    M5.Lcd.setTextSize(2);
+    M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(30, 210);
     M5.Lcd.printf("CH0: %.2fV, CH1: %.2fV", v0, v1);
-    M5.Lcd.setTextSize(1);
     
     last_displayed_v0 = v0;
     last_displayed_v1 = v1;
@@ -94,10 +183,26 @@ void setup() {
   ads.setDataRate(RATE_ADS1015_3300SPS);
   ads.setGain(GAIN_ONE);
 
+  // Initialize SD card
+  sd_available = initializeSD();
+
   drawLabels();
+  drawSDStatus();
 }
 
 void loop() {
+  M5.update();
+  
+  // Handle Button A for recording toggle
+  if (M5.BtnA.wasPressed()) {
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+    drawSDStatus();
+  }
+  
   unsigned long now = millis();
   if (now - last_sample_time >= interval_ms) {
     last_sample_time = now;
@@ -110,6 +215,9 @@ void loop() {
 
     drawOnePoint(buf_index, v0, v1);
     drawVoltageText(v0, v1);
+    
+    // Log data to SD card
+    logData(v0, v1);
 
     buf_index = (buf_index + 1) % buffer_size;
   }
