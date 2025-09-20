@@ -34,6 +34,8 @@ PubSubClient client(wifiClientSecure);
 unsigned long last_mqtt_attempt = 0;
 const int mqtt_retry_interval = 5000;
 
+unsigned long last_mqtt_send_time = 0;
+const int mqtt_send_interval = 500;
 
 unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
@@ -337,10 +339,15 @@ void loop() {
     drawVoltageText(v0, v1);
     
     // Log data to SD card
-    logData(v0, v1);
+    if (recording) {
+      logData(v0, v1);
+    }
     
-    // Publish data via MQTT
-    publishMQTTData(v0, v1);
+    // Publish data via MQTT (only when recording and at 500ms intervals)
+    if (recording && mqtt_connected && (now - last_mqtt_send_time >= mqtt_send_interval)) {
+      publishMQTTData(v0, v1);
+      last_mqtt_send_time = now;
+    }
 
     buf_index = (buf_index + 1) % buffer_size;
   }
