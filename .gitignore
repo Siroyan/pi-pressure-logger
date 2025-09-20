@@ -2,4 +2,6 @@
 .vscode/*
 
 # Secure folder containing AWS certificates and sensitive credentials
-secure/
+secure/*
+!secure/*.example
+!secure/README.md

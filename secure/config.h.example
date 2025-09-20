@@ -1,0 +1,10 @@
+// WiFi Configuration
+// Copy this file to config.h and update with your actual credentials
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// AWS IoT Configuration
+const char* aws_iot_endpoint = "YOUR_AWS_IOT_ENDPOINT.iot.region.amazonaws.com";
+const int aws_iot_port = 8883;
+const char* aws_iot_topic = "pressure_logger/data";
+const char* thing_name = "PressureLogger";

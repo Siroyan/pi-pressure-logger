@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include "../secure/aws_certificates.h"
+#include "../secure/config.h"
 
 Adafruit_ADS1015 ads;
 const float voltage_scale = 5.7;
@@ -25,14 +26,6 @@ bool sd_available = false;
 String log_filename = "";
 unsigned long session_start_time = 0;
 bool recording = false;
-
-// WiFi and AWS IoT Core configuration
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
-const char* aws_iot_endpoint = "YOUR_AWS_IOT_ENDPOINT.iot.region.amazonaws.com";
-const int aws_iot_port = 8883;
-const char* aws_iot_topic = "pressure_logger/data";
-const char* thing_name = "PressureLogger";
 
 bool wifi_connected = false;
 bool mqtt_connected = false;
