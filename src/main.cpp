@@ -1,12 +1,12 @@
 #include <M5Stack.h>
 #include <Adafruit_ADS1X15.h>
-#include <SD.h>
-#include <FS.h>
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <PubSubClient.h>
 #include "../secure/aws_certificates.h"
 #include "../secure/config.h"
+#include "StateManager.h"
+#include "WiFiManager.h"
+#include "MQTTManager.h"
+#include "SDManager.h"
+#include "DisplayManager.h"
 
 Adafruit_ADS1015 ads;
 const float voltage_scale = 5.7;
@@ -19,24 +19,6 @@ float ch0_buffer[buffer_size] = {0};
 float ch1_buffer[buffer_size] = {0};
 int buf_index = 0;
 
-float last_displayed_v0 = -1.0;
-float last_displayed_v1 = -1.0;
-
-bool sd_available = false;
-String log_filename = "";
-unsigned long session_start_time = 0;
-bool recording = false;
-
-bool wifi_connected = false;
-bool mqtt_connected = false;
-WiFiClientSecure wifiClientSecure;
-PubSubClient client(wifiClientSecure);
-unsigned long last_mqtt_attempt = 0;
-const int mqtt_retry_interval = 5000;
-
-unsigned long last_mqtt_send_time = 0;
-const int mqtt_send_interval = 500;
-
 unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
 
@@ -44,311 +26,15 @@ const int interval_ms = 1000 / sampling_rate;
 unsigned long button_press_time = 0;
 const int min_press_duration = 50; // Minimum press duration in ms to be considered valid
 
-// WiFi reconnection variables
-unsigned long last_wifi_check = 0;
-const int wifi_check_interval = 5000; // Check WiFi connection every 5 seconds
+// Manager instances
+WiFiClientSecure wifiClientSecure;
+WiFiManager wifiManager(ssid, password);
+MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name, aws_root_ca, device_cert, device_key);
+SDManager sdManager;
+DisplayManager displayManager;
+StateManager stateManager;
 
-void drawLabels() {
-  M5.Lcd.setCursor(30, 10);   M5.Lcd.print("CH0");
-  M5.Lcd.setCursor(30, 110);  M5.Lcd.print("CH1");
-
-
-  M5.Lcd.drawRect(30, 20, 280, 80, WHITE);   // CH0
-  M5.Lcd.drawRect(30, 120, 280, 80, WHITE);  // CH1
-  
-  // Scale marks and legends on left border
-  M5.Lcd.setTextColor(0x7BEF);  // Gray color
-  
-  // CH0 scale marks (0V, 3V, 6V, 9V, 12V)
-  for (int i = 0; i <= 4; i++) {
-    int y = 99 - (i * 78 / 4);  // y=99,79,59,39,20
-    int voltage = i * 3;  // 0, 3, 6, 9, 12
-    M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(8, y - 3);
-    M5.Lcd.printf("%dV", voltage);
-  }
-  
-  // CH1 scale marks (0V, 3V, 6V, 9V, 12V)
-  for (int i = 0; i <= 4; i++) {
-    int y = 199 - (i * 78 / 4);  // y=199,179,159,139,120
-    int voltage = i * 3;  // 0, 3, 6, 9, 12
-    M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(8, y - 3);
-    M5.Lcd.printf("%dV", voltage);
-  }
-  
-  M5.Lcd.setTextColor(WHITE);  // Reset to white
-}
-
-bool initializeSD() {
-  if (!SD.begin()) {
-    Serial.println("SD Card Mount Failed");
-    return false;
-  }
-  
-  uint8_t cardType = SD.cardType();
-  if (cardType == CARD_NONE) {
-    Serial.println("No SD card attached");
-    return false;
-  }
-  
-  Serial.println("SD Card initialized successfully");
-  return true;
-}
-
-String createLogFile() {
-  // Create filename with timestamp
-  unsigned long timestamp = millis();
-  String filename = "/pressure_log_" + String(timestamp) + ".csv";
-  
-  File file = SD.open(filename.c_str(), FILE_WRITE);
-  if (file) {
-    // Write CSV header
-    file.println("Timestamp(ms),CH0(V),CH1(V)");
-    file.close();
-    Serial.println("Created log file: " + filename);
-    return filename;
-  }
-  
-  Serial.println("Failed to create log file");
-  return "";
-}
-
-void logData(float v0, float v1) {
-  if (!sd_available || log_filename == "" || !recording) return;
-  
-  File file = SD.open(log_filename.c_str(), FILE_APPEND);
-  if (file) {
-    unsigned long timestamp = millis() - session_start_time;
-    file.println(String(timestamp) + "," + String(v0, 3) + "," + String(v1, 3));
-    file.close();
-  }
-}
-
-void startRecording() {
-  if (!sd_available) return;
-  
-  log_filename = createLogFile();
-  if (log_filename != "") {
-    recording = true;
-    session_start_time = millis();
-    Serial.println("Recording started");
-  }
-}
-
-void stopRecording() {
-  if (recording) {
-    recording = false;
-    Serial.println("Recording stopped");
-  }
-}
-
-void initWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  
-  unsigned long start_time = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 10000) {
-    delay(500);
-    Serial.print(".");
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    wifi_connected = true;
-    Serial.println();
-    Serial.println("WiFi connected!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    wifi_connected = false;
-    Serial.println();
-    Serial.println("WiFi connection failed!");
-  }
-}
-
-void checkWiFiConnection() {
-  if (WiFi.status() != WL_CONNECTED && wifi_connected) {
-    // WiFi was connected but now disconnected
-    wifi_connected = false;
-    mqtt_connected = false;
-    Serial.println("WiFi disconnected! Attempting reconnection...");
-  }
-  
-  if (!wifi_connected && WiFi.status() != WL_CONNECTED) {
-    // Try to reconnect
-    WiFi.reconnect();
-    Serial.print("Reconnecting to WiFi");
-    
-    unsigned long start_time = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start_time < 5000) {
-      delay(100);
-      Serial.print(".");
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      wifi_connected = true;
-      Serial.println();
-      Serial.println("WiFi reconnected!");
-      Serial.print("IP address: ");
-      Serial.println(WiFi.localIP());
-    } else {
-      Serial.println();
-      Serial.println("WiFi reconnection failed, will retry later");
-    }
-  }
-}
-
-void setupAWSIoT() {
-  // Set certificates from header file
-  wifiClientSecure.setCACert(aws_root_ca);
-  wifiClientSecure.setCertificate(device_cert);
-  wifiClientSecure.setPrivateKey(device_key);
-  
-  Serial.println("AWS IoT certificates loaded");
-}
-
-void reconnectMQTT() {
-  if (!wifi_connected) return;
-  
-  if (millis() - last_mqtt_attempt < mqtt_retry_interval) return;
-  last_mqtt_attempt = millis();
-  
-  Serial.print("Attempting AWS IoT connection...");
-  
-  if (client.connect(thing_name)) {
-    mqtt_connected = true;
-    Serial.println("connected to AWS IoT Core");
-  } else {
-    mqtt_connected = false;
-    Serial.print("failed, rc=");
-    Serial.print(client.state());
-    Serial.println(" try again in 5 seconds");
-  }
-}
-
-void publishMQTTData(float v0, float v1) {
-  if (!mqtt_connected) return;
-  
-  String payload = "{";
-  payload += "\"timestamp\":" + String(millis());
-  payload += ",\"device\":\"" + String(thing_name) + "\"";
-  payload += ",\"ch0\":" + String(v0, 3);
-  payload += ",\"ch1\":" + String(v1, 3);
-  payload += "}";
-  
-  if (client.publish(aws_iot_topic, payload.c_str())) {
-    Serial.println("Data published to AWS IoT: " + payload);
-  } else {
-    Serial.println("Failed to publish data");
-  }
-}
-
-void drawConnectionStatus() {
-  M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
-  M5.Lcd.setTextSize(1);
-  M5.Lcd.setCursor(30, 225);
-  
-  // SD Status
-  if (sd_available) {
-    if (recording) {
-      M5.Lcd.setTextColor(RED);
-      M5.Lcd.print("SD:REC");
-    } else {
-      M5.Lcd.setTextColor(GREEN);
-      M5.Lcd.print("SD:OK!");
-    }
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("SD:ERR");
-  }
-  
-  M5.Lcd.setTextColor(WHITE);
-  M5.Lcd.print(" ");
-  
-  // WiFi Status
-  if (wifi_connected) {
-    M5.Lcd.setTextColor(GREEN);
-    M5.Lcd.print("WiFi");
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("WiFi!");
-  }
-  
-  M5.Lcd.setTextColor(WHITE);
-  M5.Lcd.print(" ");
-  
-  // AWS IoT Status
-  if (mqtt_connected) {
-    M5.Lcd.setTextColor(GREEN);
-    M5.Lcd.print("AWS");
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("AWS!");
-  }
-  
-  M5.Lcd.setTextColor(WHITE);
-}
-
-void drawOnePoint(int i, float v0, float v1) {
-  // 0V〜12Vに制限
-  v0 = constrain(v0, 0.0, 12.0);
-  v1 = constrain(v1, 0.0, 12.0);
-
-  int x = 31 + (i * 278 / buffer_size);  // x=31-308 (inside border)
-
-  // 過去の波形をしっかり消去（内側のみ）
-  M5.Lcd.fillRect(x, 21, 1, 78, BLACK);   // CH0 (y=21-98)
-  M5.Lcd.fillRect(x, 121, 1, 78, BLACK);  // CH1 (y=121-198)
-
-  // ピクセル描画（12V = 上, 0V = 下、内側領域に制限）
-  int y0 = 21 + 78 - (v0 / 12.0f) * 78;  // y=21-98 (inside border)
-  int y1 = 121 + 78 - (v1 / 12.0f) * 78; // y=121-198 (inside border)
-
-  M5.Lcd.drawPixel(x, y0, GREEN);
-  M5.Lcd.drawPixel(x, y1, CYAN);
-}
-
-void drawVoltageText(float v0, float v1) {
-  if (abs(v0 - last_displayed_v0) > 0.01 || abs(v1 - last_displayed_v1) > 0.01) {
-    M5.Lcd.fillRect(30, 210, 250, 15, BLACK);
-    
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(30, 210);
-    M5.Lcd.printf("CH0: %.2fV, CH1: %.2fV", v0, v1);
-    
-    last_displayed_v0 = v0;
-    last_displayed_v1 = v1;
-  }
-}
-
-void setup() {
-  M5.begin();
-  M5.Lcd.setRotation(1);
-  M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setTextColor(WHITE);
-  M5.Lcd.setTextSize(1);
-
-  ads.begin();
-  ads.setDataRate(RATE_ADS1015_3300SPS);
-  ads.setGain(GAIN_ONE);
-
-  // Initialize SD card
-  sd_available = initializeSD();
-  
-  // Initialize WiFi
-  initWiFi();
-  
-  // Setup AWS IoT certificates and connection
-  setupAWSIoT();
-  client.setServer(aws_iot_endpoint, aws_iot_port);
-
-  drawLabels();
-  drawConnectionStatus();
-}
-
-void loop() {
-  M5.update();
-  
+void handleButtonInput() {
   // Handle Button A for recording toggle with debounce
   if (M5.BtnA.wasPressed()) {
     button_press_time = millis();
@@ -358,58 +44,71 @@ void loop() {
     unsigned long press_duration = millis() - button_press_time;
     if (press_duration >= min_press_duration) {
       Serial.println("BtnA valid press detected (" + String(press_duration) + "ms)");
-      if (recording) {
-        stopRecording();
-      } else {
-        startRecording();
-      }
-      drawConnectionStatus();
+      stateManager.toggleState();
+      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                          wifiManager.isConnected(), mqttManager.isConnected());
     } else {
       Serial.println("BtnA press too short (" + String(press_duration) + "ms) - ignored");
     }
     button_press_time = 0;
   }
+}
+
+void handleNetworkMaintenance() {
+  // Check WiFi connection and maintain MQTT
+  wifiManager.checkConnection();
+  mqttManager.loop();
+}
+
+void setup() {
+  M5.begin();
   
-  // Check WiFi connection periodically
+  // Initialize sensor
+  ads.begin();
+  ads.setDataRate(RATE_ADS1015_3300SPS);
+  ads.setGain(GAIN_ONE);
+
+  // Initialize managers
+  displayManager.init();
+  sdManager.init();
+  wifiManager.init();
+  mqttManager.init();
+  
+  // Connect state manager to other managers
+  stateManager.setManagers(&sdManager, &mqttManager, &displayManager);
+  
+  // Draw initial status
+  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                      wifiManager.isConnected(), mqttManager.isConnected());
+}
+
+void loop() {
+  M5.update();
   unsigned long now = millis();
-  if (now - last_wifi_check >= wifi_check_interval) {
-    last_wifi_check = now;
-    checkWiFiConnection();
-    drawConnectionStatus(); // Update connection status display
+  
+  // Handle user input
+  handleButtonInput();
+  
+  // Handle network maintenance
+  handleNetworkMaintenance();
+  
+  // Update connection status display periodically
+  static unsigned long last_status_update = 0;
+  if (now - last_status_update >= 2000) {
+    last_status_update = now;
+    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                        wifiManager.isConnected(), mqttManager.isConnected());
   }
   
-  // Maintain MQTT connection
-  if (!client.connected()) {
-    reconnectMQTT();
-  }
-  client.loop();
-  
+  // Process sensor data at regular intervals
   if (now - last_sample_time >= interval_ms) {
     last_sample_time = now;
 
-    // float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
-    // float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
-
-    float v0 = 3.3;
-    float v1 = 1.5;
-
-    ch0_buffer[buf_index] = v0;
-    ch1_buffer[buf_index] = v1;
-
-    drawOnePoint(buf_index, v0, v1);
-    drawVoltageText(v0, v1);
+    // Read sensor data
+    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
+    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
     
-    // Log data to SD card
-    if (recording) {
-      logData(v0, v1);
-    }
-    
-    // Publish data via MQTT (only when recording and at 500ms intervals)
-    if (recording && mqtt_connected && (now - last_mqtt_send_time >= mqtt_send_interval)) {
-      publishMQTTData(v0, v1);
-      last_mqtt_send_time = now;
-    }
-
-    buf_index = (buf_index + 1) % buffer_size;
+    // Process data through state machine
+    stateManager.processSensorData(v0, v1, now);
   }
 }
