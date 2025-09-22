@@ -40,6 +40,14 @@ const int mqtt_send_interval = 500;
 unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
 
+// Button debounce variables
+unsigned long button_press_time = 0;
+const int min_press_duration = 50; // Minimum press duration in ms to be considered valid
+
+// WiFi reconnection variables
+unsigned long last_wifi_check = 0;
+const int wifi_check_interval = 5000; // Check WiFi connection every 5 seconds
+
 void drawLabels() {
   M5.Lcd.setCursor(30, 10);   M5.Lcd.print("CH0");
   M5.Lcd.setCursor(30, 110);  M5.Lcd.print("CH1");
@@ -155,6 +163,38 @@ void initWiFi() {
     wifi_connected = false;
     Serial.println();
     Serial.println("WiFi connection failed!");
+  }
+}
+
+void checkWiFiConnection() {
+  if (WiFi.status() != WL_CONNECTED && wifi_connected) {
+    // WiFi was connected but now disconnected
+    wifi_connected = false;
+    mqtt_connected = false;
+    Serial.println("WiFi disconnected! Attempting reconnection...");
+  }
+  
+  if (!wifi_connected && WiFi.status() != WL_CONNECTED) {
+    // Try to reconnect
+    WiFi.reconnect();
+    Serial.print("Reconnecting to WiFi");
+    
+    unsigned long start_time = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start_time < 5000) {
+      delay(100);
+      Serial.print(".");
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      wifi_connected = true;
+      Serial.println();
+      Serial.println("WiFi reconnected!");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+    } else {
+      Serial.println();
+      Serial.println("WiFi reconnection failed, will retry later");
+    }
   }
 }
 
@@ -309,14 +349,33 @@ void setup() {
 void loop() {
   M5.update();
   
-  // Handle Button A for recording toggle
+  // Handle Button A for recording toggle with debounce
   if (M5.BtnA.wasPressed()) {
-    if (recording) {
-      stopRecording();
+    button_press_time = millis();
+  }
+  
+  if (M5.BtnA.wasReleased() && button_press_time > 0) {
+    unsigned long press_duration = millis() - button_press_time;
+    if (press_duration >= min_press_duration) {
+      Serial.println("BtnA valid press detected (" + String(press_duration) + "ms)");
+      if (recording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+      drawConnectionStatus();
     } else {
-      startRecording();
+      Serial.println("BtnA press too short (" + String(press_duration) + "ms) - ignored");
     }
-    drawConnectionStatus();
+    button_press_time = 0;
+  }
+  
+  // Check WiFi connection periodically
+  unsigned long now = millis();
+  if (now - last_wifi_check >= wifi_check_interval) {
+    last_wifi_check = now;
+    checkWiFiConnection();
+    drawConnectionStatus(); // Update connection status display
   }
   
   // Maintain MQTT connection
@@ -325,12 +384,14 @@ void loop() {
   }
   client.loop();
   
-  unsigned long now = millis();
   if (now - last_sample_time >= interval_ms) {
     last_sample_time = now;
 
-    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
-    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
+    // float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
+    // float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
+
+    float v0 = 3.3;
+    float v1 = 1.5;
 
     ch0_buffer[buf_index] = v0;
     ch1_buffer[buf_index] = v1;
