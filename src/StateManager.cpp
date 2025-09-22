@@ -6,10 +6,15 @@
 StateManager::StateManager() : currentState(STANDBY), stateChangeTime(0), 
   sdManager(nullptr), mqttManager(nullptr), displayManager(nullptr) {}
 
-void StateManager::setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display) {
+void StateManager::setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display, TimeManager* time) {
   sdManager = sd;
   mqttManager = mqtt;
   displayManager = display;
+  
+  // Connect TimeManager to SDManager if both are available
+  if (time && sdManager) {
+    sdManager->setTimeManager(time);
+  }
 }
 
 SystemState StateManager::getCurrentState() {

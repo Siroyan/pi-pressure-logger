@@ -4,16 +4,20 @@
 #include <SD.h>
 #include <FS.h>
 
+class TimeManager;
+
 class SDManager {
 private:
   bool sd_available;
   String log_filename;
   unsigned long session_start_time;
   bool recording;
+  TimeManager* timeManager;
   
 public:
   SDManager();
   
+  void setTimeManager(TimeManager* tm);
   bool init();
   bool isAvailable();
   bool isRecording();

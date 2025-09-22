@@ -7,6 +7,7 @@
 #include "MQTTManager.h"
 #include "SDManager.h"
 #include "DisplayManager.h"
+#include "TimeManager.h"
 
 Adafruit_ADS1015 ads;
 const float voltage_scale = 5.7;
@@ -32,6 +33,7 @@ WiFiManager wifiManager(ssid, password);
 MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name, aws_root_ca, device_cert, device_key);
 SDManager sdManager;
 DisplayManager displayManager;
+TimeManager timeManager;
 StateManager stateManager;
 
 void handleButtonInput() {
@@ -72,10 +74,14 @@ void setup() {
   displayManager.init();
   sdManager.init();
   wifiManager.init();
+  
+  // Initialize time synchronization after WiFi
+  timeManager.init();
+  
   mqttManager.init();
   
   // Connect state manager to other managers
-  stateManager.setManagers(&sdManager, &mqttManager, &displayManager);
+  stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
   displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
@@ -98,6 +104,16 @@ void loop() {
     last_status_update = now;
     displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
                                         wifiManager.isConnected(), mqttManager.isConnected());
+  }
+  
+  // Re-synchronize time periodically (every 30 minutes)
+  static unsigned long last_time_sync = 0;
+  if (wifiManager.isConnected() && (now - last_time_sync >= 30 * 60 * 1000)) {
+    last_time_sync = now;
+    if (!timeManager.isTimeSynced()) {
+      Serial.println("Re-synchronizing time...");
+      timeManager.syncTime();
+    }
   }
   
   // Process sensor data at regular intervals

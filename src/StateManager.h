@@ -7,6 +7,7 @@
 class SDManager;
 class MQTTManager;
 class DisplayManager;
+class TimeManager;
 
 extern float ch0_buffer[];
 extern float ch1_buffer[];
@@ -29,7 +30,7 @@ private:
 public:
   StateManager();
   
-  void setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display);
+  void setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display, TimeManager* time = nullptr);
   SystemState getCurrentState();
   void transitionToStandby();
   void transitionToRecording();
