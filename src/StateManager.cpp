@@ -37,18 +37,43 @@ void StateManager::transitionToRecording() {
   }
 }
 
+void StateManager::transitionToFileList() {
+  if (currentState != FILE_LIST) {
+    currentState = FILE_LIST;
+    stateChangeTime = millis();
+    onEnterFileList();
+  }
+}
+
 void StateManager::toggleState() {
   if (currentState == STANDBY) {
     transitionToRecording();
-  } else {
+  } else if (currentState == RECORDING) {
+    transitionToStandby();
+  } else if (currentState == FILE_LIST) {
     transitionToStandby();
   }
+}
+
+void StateManager::handleButtonB() {
+  if (currentState == STANDBY) {
+    transitionToFileList();
+  } else if (currentState == FILE_LIST) {
+    transitionToStandby();
+  }
+  // Button B does nothing in RECORDING state to prevent accidental interruption
 }
 
 void StateManager::onEnterStandby() {
   if (sdManager && sdManager->isRecording()) {
     sdManager->stopRecording();
   }
+  
+  // If coming from FILE_LIST, restore the waveform display
+  if (displayManager) {
+    displayManager->init();
+  }
+  
   Serial.println("State: STANDBY");
 }
 
@@ -59,12 +84,18 @@ void StateManager::onEnterRecording() {
   Serial.println("State: RECORDING");
 }
 
+void StateManager::onEnterFileList() {
+  Serial.println("State: FILE_LIST");
+  // Display will be updated by the DisplayManager
+}
+
 void StateManager::processSensorData(float v0, float v1, unsigned long now) {
-  // Always update display buffers and draw
+  // Always update display buffers
   ch0_buffer[buf_index] = v0;
   ch1_buffer[buf_index] = v1;
   
-  if (displayManager) {
+  // Only update display if not in file list mode
+  if (displayManager && currentState != FILE_LIST) {
     displayManager->drawOnePoint(buf_index, v0, v1, ch0_buffer, ch1_buffer, buffer_size);
     displayManager->drawVoltageText(v0, v1);
   }
@@ -80,6 +111,8 @@ void StateManager::handleStateSpecificActions(float v0, float v1, unsigned long 
     handleStandbyState();
   } else if (currentState == RECORDING) {
     handleRecordingState(v0, v1, now);
+  } else if (currentState == FILE_LIST) {
+    handleFileListState();
   }
 }
 
@@ -98,4 +131,9 @@ void StateManager::handleRecordingState(float v0, float v1, unsigned long now) {
     mqttManager->publishData(v0, v1);
     mqttManager->updateLastSendTime(now);
   }
+}
+
+void StateManager::handleFileListState() {
+  // File list state: no sensor data processing needed
+  // Navigation and file operations handled by button inputs
 }

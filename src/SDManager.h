@@ -3,6 +3,7 @@
 
 #include <SD.h>
 #include <FS.h>
+#include <vector>
 
 class TimeManager;
 
@@ -25,6 +26,12 @@ public:
   void startRecording();
   void stopRecording();
   void logData(float v0, float v1);
+  
+  // File management functions
+  std::vector<String> getLogFileList();
+  bool deleteFile(const String& filename);
+  long getFileSize(const String& filename);
+  String getFileTimestamp(const String& filename);
   
 private:
   String createLogFile();

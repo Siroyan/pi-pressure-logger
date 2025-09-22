@@ -1,5 +1,6 @@
 #include "SDManager.h"
 #include "TimeManager.h"
+#include <algorithm>
 
 SDManager::SDManager() : sd_available(false), log_filename(""), session_start_time(0), recording(false), timeManager(nullptr) {}
 
@@ -99,5 +100,98 @@ void SDManager::logData(float v0, float v1) {
     unsigned long timestamp = millis() - session_start_time;
     file.println(String(timestamp) + "," + String(v0, 3) + "," + String(v1, 3));
     file.close();
+  }
+}
+
+std::vector<String> SDManager::getLogFileList() {
+  std::vector<String> fileList;
+  
+  if (!sd_available) {
+    return fileList;
+  }
+  
+  File root = SD.open("/");
+  if (!root) {
+    Serial.println("Failed to open root directory");
+    return fileList;
+  }
+  
+  File file = root.openNextFile();
+  while (file) {
+    String filename = file.name();
+    // Only include .csv files that start with "pressure_log_"
+    if (!file.isDirectory() && filename.endsWith(".csv") && filename.startsWith("pressure_log_")) {
+      fileList.push_back(filename);
+    }
+    file.close();
+    file = root.openNextFile();
+  }
+  root.close();
+  
+  // Sort files by name (which includes timestamp, so chronological order)
+  std::sort(fileList.begin(), fileList.end(), [](const String& a, const String& b) {
+    return a > b; // Reverse order - newest first
+  });
+  
+  return fileList;
+}
+
+bool SDManager::deleteFile(const String& filename) {
+  if (!sd_available) {
+    return false;
+  }
+  
+  String fullPath = "/" + filename;
+  if (SD.exists(fullPath.c_str())) {
+    bool result = SD.remove(fullPath.c_str());
+    if (result) {
+      Serial.println("Deleted file: " + filename);
+    } else {
+      Serial.println("Failed to delete file: " + filename);
+    }
+    return result;
+  } else {
+    Serial.println("File not found: " + filename);
+    return false;
+  }
+}
+
+long SDManager::getFileSize(const String& filename) {
+  if (!sd_available) {
+    return -1;
+  }
+  
+  String fullPath = "/" + filename;
+  File file = SD.open(fullPath.c_str(), FILE_READ);
+  if (file) {
+    long size = file.size();
+    file.close();
+    return size;
+  }
+  
+  return -1;
+}
+
+String SDManager::getFileTimestamp(const String& filename) {
+  // Extract timestamp from filename
+  // Format: pressure_log_YYYY-MM-DD-hh-mm-ss.csv or pressure_log_millis.csv
+  
+  String name = filename;
+  name.replace("pressure_log_", "");
+  name.replace(".csv", "");
+  
+  // Check if it's a timestamp format (contains hyphens)
+  if (name.indexOf('-') >= 0) {
+    // Convert YYYY-MM-DD-hh-mm-ss to readable format
+    name.replace('-', '/');
+    int lastSlash = name.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      name = name.substring(0, lastSlash) + " " + name.substring(lastSlash + 1);
+      name.replace('/', ':');
+    }
+    return name;
+  } else {
+    // Millis-based filename
+    return "Legacy (" + name + ")";
   }
 }

@@ -16,7 +16,8 @@ extern const int buffer_size;
 
 enum SystemState {
   STANDBY,
-  RECORDING
+  RECORDING,
+  FILE_LIST
 };
 
 class StateManager {
@@ -34,15 +35,19 @@ public:
   SystemState getCurrentState();
   void transitionToStandby();
   void transitionToRecording();
+  void transitionToFileList();
   void toggleState();
+  void handleButtonB();
   void processSensorData(float v0, float v1, unsigned long now);
   void handleStateSpecificActions(float v0, float v1, unsigned long now);
   
 private:
   void onEnterStandby();
   void onEnterRecording();
+  void onEnterFileList();
   void handleStandbyState();
   void handleRecordingState(float v0, float v1, unsigned long now);
+  void handleFileListState();
 };
 
 #endif // STATE_MANAGER_H

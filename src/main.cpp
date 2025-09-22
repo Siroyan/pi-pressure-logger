@@ -46,13 +46,93 @@ void handleButtonInput() {
     unsigned long press_duration = millis() - button_press_time;
     if (press_duration >= min_press_duration) {
       Serial.println("BtnA valid press detected (" + String(press_duration) + "ms)");
-      stateManager.toggleState();
-      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
-                                          wifiManager.isConnected(), mqttManager.isConnected());
+      
+      if (stateManager.getCurrentState() == FILE_LIST) {
+        // In file list: Button A scrolls down
+        std::vector<String> files = sdManager.getLogFileList();
+        displayManager.navigateFileList(1, files.size());
+        
+        // Update display with file sizes
+        std::vector<long> fileSizes;
+        for (const String& file : files) {
+          fileSizes.push_back(sdManager.getFileSize(file));
+        }
+        displayManager.drawFileList(files, fileSizes);
+      } else {
+        // Normal toggle behavior
+        stateManager.toggleState();
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                            wifiManager.isConnected(), mqttManager.isConnected());
+      }
     } else {
       Serial.println("BtnA press too short (" + String(press_duration) + "ms) - ignored");
     }
     button_press_time = 0;
+  }
+  
+  // Handle Button B
+  if (M5.BtnB.wasPressed()) {
+    if (stateManager.getCurrentState() == FILE_LIST) {
+      // In file list: Button B deletes selected file
+      std::vector<String> files = sdManager.getLogFileList();
+      if (!files.empty()) {
+        int selectedIndex = displayManager.getSelectedFileIndex();
+        if (selectedIndex >= 0 && selectedIndex < files.size()) {
+          String selectedFile = files[selectedIndex];
+          
+          // Confirm and delete
+          if (sdManager.deleteFile(selectedFile)) {
+            Serial.println("File deleted: " + selectedFile);
+            
+            // Refresh file list
+            files = sdManager.getLogFileList();
+            
+            // Adjust selection if needed
+            if (selectedIndex >= files.size() && files.size() > 0) {
+              displayManager.navigateFileList(-1, files.size());
+            }
+            
+            // Update display
+            std::vector<long> fileSizes;
+            for (const String& file : files) {
+              fileSizes.push_back(sdManager.getFileSize(file));
+            }
+            displayManager.drawFileList(files, fileSizes);
+          }
+        }
+      }
+    } else {
+      // Handle transition to file list
+      stateManager.handleButtonB();
+      
+      if (stateManager.getCurrentState() == FILE_LIST) {
+        // Entered file list mode - display files
+        displayManager.resetFileListNavigation();
+        std::vector<String> files = sdManager.getLogFileList();
+        
+        // Get file sizes
+        std::vector<long> fileSizes;
+        for (const String& file : files) {
+          fileSizes.push_back(sdManager.getFileSize(file));
+        }
+        
+        displayManager.drawFileList(files, fileSizes);
+      } else {
+        // Exited file list mode - display will be restored by StateManager
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                            wifiManager.isConnected(), mqttManager.isConnected());
+      }
+    }
+  }
+  
+  // Handle Button C for returning to waveform screen
+  if (M5.BtnC.wasPressed()) {
+    if (stateManager.getCurrentState() == FILE_LIST) {
+      // Return to STANDBY (waveform screen)
+      stateManager.transitionToStandby();
+      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+                                          wifiManager.isConnected(), mqttManager.isConnected());
+    }
   }
 }
 
@@ -121,8 +201,11 @@ void loop() {
     last_sample_time = now;
 
     // Read sensor data
-    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
-    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
+    // float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
+    // float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
+
+    float v0 = 3.3;
+    float v1 = 1.2;
     
     // Process data through state machine
     stateManager.processSensorData(v0, v1, now);
