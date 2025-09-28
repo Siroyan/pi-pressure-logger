@@ -201,11 +201,8 @@ void loop() {
     last_sample_time = now;
 
     // Read sensor data
-    // float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
-    // float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
-
-    float v0 = 3.3;
-    float v1 = 1.2;
+    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
+    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
     
     // Process data through state machine
     stateManager.processSensorData(v0, v1, now);
