@@ -28,7 +28,7 @@ public:
   void init();
   void loop();
   bool isConnected();
-  void publishData(float v0, float v1);
+  void publishData(float p0, float p1);
   bool canPublish(unsigned long now);
   void updateLastSendTime(unsigned long now);
   

@@ -58,7 +58,7 @@ String SDManager::createLogFile() {
   File file = SD.open(filename.c_str(), FILE_WRITE);
   if (file) {
     // Write CSV header with timestamp info
-    file.println("Timestamp(ms),CH0(V),CH1(V)");
+    file.println("Timestamp(ms),CH0(MPa),CH1(MPa)");
     
     // Add a comment with session start time if NTP is available
     if (timeManager && timeManager->isTimeSynced()) {
@@ -92,13 +92,13 @@ void SDManager::stopRecording() {
   }
 }
 
-void SDManager::logData(float v0, float v1) {
+void SDManager::logData(float p0, float p1) {
   if (!sd_available || log_filename == "" || !recording) return;
   
   File file = SD.open(log_filename.c_str(), FILE_APPEND);
   if (file) {
     unsigned long timestamp = millis() - session_start_time;
-    file.println(String(timestamp) + "," + String(v0, 3) + "," + String(v1, 3));
+    file.println(String(timestamp) + "," + String(p0, 4) + "," + String(p1, 4));
     file.close();
   }
 }

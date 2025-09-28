@@ -19,8 +19,8 @@ public:
   
   void init();
   void drawLabels();
-  void drawOnePoint(int i, float v0, float v1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size);
-  void drawVoltageText(float v0, float v1);
+  void drawOnePoint(int i, float p0, float p1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size);
+  void drawPressureText(float p0, float p1);
   void drawConnectionStatus(bool sd_available, bool sd_recording, bool wifi_connected, bool mqtt_connected);
   
   // File list display functions
@@ -28,6 +28,7 @@ public:
   void navigateFileList(int direction, int total_files);
   int getSelectedFileIndex() const;
   void resetFileListNavigation();
+  void drawButtonInstructions(const String& instructions = "");
 };
 
 #endif // DISPLAY_MANAGER_H

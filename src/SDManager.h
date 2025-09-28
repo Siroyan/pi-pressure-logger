@@ -25,7 +25,7 @@ public:
   
   void startRecording();
   void stopRecording();
-  void logData(float v0, float v1);
+  void logData(float p0, float p1);
   
   // File management functions
   std::vector<String> getLogFileList();

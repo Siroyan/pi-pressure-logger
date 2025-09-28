@@ -38,15 +38,15 @@ public:
   void transitionToFileList();
   void toggleState();
   void handleButtonB();
-  void processSensorData(float v0, float v1, unsigned long now);
-  void handleStateSpecificActions(float v0, float v1, unsigned long now);
+  void processSensorData(float p0, float p1, unsigned long now);
+  void handleStateSpecificActions(float p0, float p1, unsigned long now);
   
 private:
   void onEnterStandby();
   void onEnterRecording();
   void onEnterFileList();
   void handleStandbyState();
-  void handleRecordingState(float v0, float v1, unsigned long now);
+  void handleRecordingState(float p0, float p1, unsigned long now);
   void handleFileListState();
 };
 

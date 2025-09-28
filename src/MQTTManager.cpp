@@ -50,14 +50,14 @@ bool MQTTManager::isConnected() {
   return mqtt_connected && client->connected();
 }
 
-void MQTTManager::publishData(float v0, float v1) {
+void MQTTManager::publishData(float p0, float p1) {
   if (!isConnected()) return;
   
   String payload = "{";
   payload += "\"timestamp\":" + String(millis());
   payload += ",\"device\":\"" + String(thing_name) + "\"";
-  payload += ",\"ch0\":" + String(v0, 3);
-  payload += ",\"ch1\":" + String(v1, 3);
+  payload += ",\"ch0\":" + String(p0, 4);
+  payload += ",\"ch1\":" + String(p1, 4);
   payload += "}";
   
   // Publish to both topics with same data

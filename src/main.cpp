@@ -10,7 +10,9 @@
 #include "TimeManager.h"
 
 Adafruit_ADS1015 ads;
-const float voltage_scale = 5.7;
+// Voltage divider: 5V -> 2.5V (R1=47k, R2=47k)
+// ADS1015 with GAIN_TWOTHIRDS: 0-6.144V range, LSB = 3mV
+// Pressure conversion: 1V=0MPa, 5V=1MPa
 
 const int duration_sec = 20;
 const int sampling_rate = 100;
@@ -148,7 +150,7 @@ void setup() {
   // Initialize sensor
   ads.begin();
   ads.setDataRate(RATE_ADS1015_3300SPS);
-  ads.setGain(GAIN_ONE);
+  ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
 
   // Initialize managers
   displayManager.init();
@@ -200,11 +202,20 @@ void loop() {
   if (now - last_sample_time >= interval_ms) {
     last_sample_time = now;
 
-    // Read sensor data
-    float v0 = ads.readADC_SingleEnded(0) * 0.002f * voltage_scale;
-    float v1 = ads.readADC_SingleEnded(1) * 0.002f * voltage_scale;
+    // Read sensor data and convert to original voltage (before voltage divider)
+    // ADS1015 GAIN_TWOTHIRDS: 3mV per LSB, voltage divider doubles the original voltage
+    float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f; // Convert to original 0-5V
+    float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
+    
+    // Convert voltage to pressure: 1V=0MPa, 5V=1MPa -> P = (V-1)/4
+    float p0 = (v0_original - 1.0f) / 4.0f; // Pressure in MPa
+    float p1 = (v1_original - 1.0f) / 4.0f;
+    
+    // Constrain pressure to 0-1.0 MPa range
+    p0 = constrain(p0, 0.0f, 1.0f);
+    p1 = constrain(p1, 0.0f, 1.0f);
     
     // Process data through state machine
-    stateManager.processSensorData(v0, v1, now);
+    stateManager.processSensorData(p0, p1, now);
   }
 }

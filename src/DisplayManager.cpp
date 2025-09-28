@@ -21,31 +21,34 @@ void DisplayManager::drawLabels() {
   // Scale marks and legends on left border
   M5.Lcd.setTextColor(0x7BEF);  // Gray color
   
-  // CH0 scale marks (0V, 3V, 6V, 9V, 12V)
+  // CH0 scale marks (0.0MPa, 0.25MPa, 0.5MPa, 0.75MPa, 1.0MPa)
   for (int i = 0; i <= 4; i++) {
     int y = 99 - (i * 78 / 4);  // y=99,79,59,39,20
-    int voltage = i * 3;  // 0, 3, 6, 9, 12
+    float pressure = i * 0.25f;  // 0.0, 0.25, 0.5, 0.75, 1.0
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(8, y - 3);
-    M5.Lcd.printf("%dV", voltage);
+    M5.Lcd.setCursor(2, y - 3);
+    M5.Lcd.printf("%.2f", pressure);
   }
   
-  // CH1 scale marks (0V, 3V, 6V, 9V, 12V)
+  // CH1 scale marks (0.0MPa, 0.25MPa, 0.5MPa, 0.75MPa, 1.0MPa)
   for (int i = 0; i <= 4; i++) {
     int y = 199 - (i * 78 / 4);  // y=199,179,159,139,120
-    int voltage = i * 3;  // 0, 3, 6, 9, 12
+    float pressure = i * 0.25f;  // 0.0, 0.25, 0.5, 0.75, 1.0
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(8, y - 3);
-    M5.Lcd.printf("%dV", voltage);
+    M5.Lcd.setCursor(2, y - 3);
+    M5.Lcd.printf("%.2f", pressure);
   }
   
   M5.Lcd.setTextColor(WHITE);  // Reset to white
+  
+  // Button instructions at bottom right
+  drawButtonInstructions();
 }
 
-void DisplayManager::drawOnePoint(int i, float v0, float v1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size) {
-  // Constrain voltages to 0V~12V
-  v0 = constrain(v0, 0.0, 12.0);
-  v1 = constrain(v1, 0.0, 12.0);
+void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size) {
+  // Constrain pressure to 0.0~1.0 MPa
+  p0 = constrain(p0, 0.0, 1.0);
+  p1 = constrain(p1, 0.0, 1.0);
 
   int x = 31 + (i * 278 / buffer_size);  // x=31-308 (inside border)
 
@@ -53,24 +56,24 @@ void DisplayManager::drawOnePoint(int i, float v0, float v1, const float* ch0_bu
   M5.Lcd.fillRect(x, 21, 1, 78, BLACK);   // CH0 (y=21-98)
   M5.Lcd.fillRect(x, 121, 1, 78, BLACK);  // CH1 (y=121-198)
 
-  // Draw pixels (12V = top, 0V = bottom, limited to inside area)
-  int y0 = 21 + 78 - (v0 / 12.0f) * 78;  // y=21-98 (inside border)
-  int y1 = 121 + 78 - (v1 / 12.0f) * 78; // y=121-198 (inside border)
+  // Draw pixels (1.0MPa = top, 0.0MPa = bottom, limited to inside area)
+  int y0 = 21 + 78 - (p0 / 1.0f) * 78;  // y=21-98 (inside border)
+  int y1 = 121 + 78 - (p1 / 1.0f) * 78; // y=121-198 (inside border)
 
   M5.Lcd.drawPixel(x, y0, GREEN);
   M5.Lcd.drawPixel(x, y1, CYAN);
 }
 
-void DisplayManager::drawVoltageText(float v0, float v1) {
-  if (abs(v0 - last_displayed_v0) > 0.01 || abs(v1 - last_displayed_v1) > 0.01) {
+void DisplayManager::drawPressureText(float p0, float p1) {
+  if (abs(p0 - last_displayed_v0) > 0.001 || abs(p1 - last_displayed_v1) > 0.001) {
     M5.Lcd.fillRect(30, 210, 250, 15, BLACK);
     
     M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(30, 210);
-    M5.Lcd.printf("CH0: %.2fV, CH1: %.2fV", v0, v1);
+    M5.Lcd.printf("CH0: %.3fMPa, CH1: %.3fMPa", p0, p1);
     
-    last_displayed_v0 = v0;
-    last_displayed_v1 = v1;
+    last_displayed_v0 = p0;
+    last_displayed_v1 = p1;
   }
 }
 
@@ -129,11 +132,8 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
   M5.Lcd.setCursor(10, 5);
   M5.Lcd.print("SD Card Files (" + String(files.size()) + " files)");
   
-  // Instructions
-  M5.Lcd.setCursor(10, 220);
-  M5.Lcd.setTextColor(YELLOW);
-  M5.Lcd.print("A:Down B:Delete C:Back");
-  M5.Lcd.setTextColor(WHITE);
+  // Instructions at bottom right
+  drawButtonInstructions("A:Down B:Delete C:Back");
   
   if (files.empty()) {
     M5.Lcd.setCursor(50, 100);
@@ -220,4 +220,15 @@ int DisplayManager::getSelectedFileIndex() const {
 void DisplayManager::resetFileListNavigation() {
   selected_file_index = 0;
   scroll_offset = 0;
+}
+
+void DisplayManager::drawButtonInstructions(const String& instructions) {
+  M5.Lcd.setCursor(180, 225);
+  M5.Lcd.setTextColor(YELLOW);
+  if (instructions.length() > 0) {
+    M5.Lcd.print(instructions);
+  } else {
+    M5.Lcd.print("A:Record B:Files");
+  }
+  M5.Lcd.setTextColor(WHITE);
 }
