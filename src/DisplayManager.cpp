@@ -21,19 +21,19 @@ void DisplayManager::drawLabels() {
   // Scale marks and legends on left border
   M5.Lcd.setTextColor(0x7BEF);  // Gray color
   
-  // CH0 scale marks (0.0MPa, 0.25MPa, 0.5MPa, 0.75MPa, 1.0MPa)
+  // CH0 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
     int y = 99 - (i * 78 / 4);  // y=99,79,59,39,20
-    float pressure = i * 0.25f;  // 0.0, 0.25, 0.5, 0.75, 1.0
+    float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
     M5.Lcd.printf("%.2f", pressure);
   }
   
-  // CH1 scale marks (0.0MPa, 0.25MPa, 0.5MPa, 0.75MPa, 1.0MPa)
+  // CH1 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
     int y = 199 - (i * 78 / 4);  // y=199,179,159,139,120
-    float pressure = i * 0.25f;  // 0.0, 0.25, 0.5, 0.75, 1.0
+    float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
     M5.Lcd.printf("%.2f", pressure);
@@ -46,9 +46,9 @@ void DisplayManager::drawLabels() {
 }
 
 void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size) {
-  // Constrain pressure to 0.0~1.0 MPa
-  p0 = constrain(p0, 0.0, 1.0);
-  p1 = constrain(p1, 0.0, 1.0);
+  // Constrain pressure to 0.0~0.5 MPa
+  p0 = constrain(p0, 0.0, 0.5);
+  p1 = constrain(p1, 0.0, 0.5);
 
   int x = 31 + (i * 278 / buffer_size);  // x=31-308 (inside border)
 
@@ -56,9 +56,9 @@ void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_bu
   M5.Lcd.fillRect(x, 21, 1, 78, BLACK);   // CH0 (y=21-98)
   M5.Lcd.fillRect(x, 121, 1, 78, BLACK);  // CH1 (y=121-198)
 
-  // Draw pixels (1.0MPa = top, 0.0MPa = bottom, limited to inside area)
-  int y0 = 21 + 78 - (p0 / 1.0f) * 78;  // y=21-98 (inside border)
-  int y1 = 121 + 78 - (p1 / 1.0f) * 78; // y=121-198 (inside border)
+  // Draw pixels (0.5MPa = top, 0.0MPa = bottom, limited to inside area)
+  int y0 = 21 + 78 - (p0 / 0.5f) * 78;  // y=21-98 (inside border)
+  int y1 = 121 + 78 - (p1 / 0.5f) * 78; // y=121-198 (inside border)
 
   M5.Lcd.drawPixel(x, y0, GREEN);
   M5.Lcd.drawPixel(x, y1, CYAN);
