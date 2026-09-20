@@ -90,7 +90,12 @@ String SDManager::createUniqueFilename(const String& filename) {
   const String extension = extensionIndex >= 0 ? filename.substring(extensionIndex) : "";
 
   for (unsigned int suffix = 1; suffix < 10000; suffix++) {
-    String candidate = baseName + "_" + String(suffix) + extension;
+    String paddedSuffix = String(suffix);
+    while (paddedSuffix.length() < 4) {
+      paddedSuffix = "0" + paddedSuffix;
+    }
+
+    String candidate = baseName + "_" + paddedSuffix + extension;
     if (!SD.exists(candidate.c_str())) {
       return candidate;
     }
