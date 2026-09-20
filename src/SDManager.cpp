@@ -55,6 +55,12 @@ String SDManager::createLogFile() {
     filename = "/pressure_log_" + String(timestamp) + ".csv";
   }
   
+  filename = createUniqueFilename(filename);
+  if (filename.length() == 0) {
+    Serial.println("Failed to allocate a unique log filename");
+    return "";
+  }
+
   File file = SD.open(filename.c_str(), FILE_WRITE);
   if (file) {
     // Write CSV header with timestamp info
@@ -71,6 +77,25 @@ String SDManager::createLogFile() {
   }
   
   Serial.println("Failed to create log file");
+  return "";
+}
+
+String SDManager::createUniqueFilename(const String& filename) {
+  if (!SD.exists(filename.c_str())) {
+    return filename;
+  }
+
+  const int extensionIndex = filename.lastIndexOf('.');
+  const String baseName = extensionIndex >= 0 ? filename.substring(0, extensionIndex) : filename;
+  const String extension = extensionIndex >= 0 ? filename.substring(extensionIndex) : "";
+
+  for (unsigned int suffix = 1; suffix < 10000; suffix++) {
+    String candidate = baseName + "_" + String(suffix) + extension;
+    if (!SD.exists(candidate.c_str())) {
+      return candidate;
+    }
+  }
+
   return "";
 }
 
