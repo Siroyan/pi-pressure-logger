@@ -182,7 +182,7 @@ void loop() {
   
   // Update connection status display periodically
   static unsigned long last_status_update = 0;
-  if (now - last_status_update >= 2000) {
+  if (now - last_status_update >= 500) {
     last_status_update = now;
     displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                         wifiManager.isConnected(), mqttManager.isConnected());

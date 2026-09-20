@@ -1,5 +1,9 @@
 #include "DisplayManager.h"
 
+namespace {
+constexpr unsigned long kSdErrorBlinkHalfPeriodMs = 500;
+}
+
 DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1.0), 
   selected_file_index(0), scroll_offset(0) {}
 
@@ -85,7 +89,8 @@ void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, 
   
   // SD Status
   if (sd_error) {
-    M5.Lcd.setTextColor(RED);
+    bool showRed = (millis() / kSdErrorBlinkHalfPeriodMs) % 2 == 0;
+    M5.Lcd.setTextColor(showRed ? RED : YELLOW);
     M5.Lcd.print("SD:ERR");
   } else if (sd_available) {
     if (sd_recording) {
