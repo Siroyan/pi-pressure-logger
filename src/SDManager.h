@@ -37,6 +37,7 @@ public:
   
 private:
   String createLogFile();
+  String createUniqueFilename(const String& filename);
 };
 
 #endif // SD_MANAGER_H
