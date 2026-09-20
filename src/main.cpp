@@ -10,6 +10,7 @@
 #include "TimeManager.h"
 
 Adafruit_ADS1015 ads;
+bool adc_available = false;
 // Voltage divider: 5V -> 2.5V (R1=47k, R2=47k)
 // ADS1015 with GAIN_TWOTHIRDS: 0-6.144V range, LSB = 3mV
 // Pressure conversion: 1V=0MPa, 5V=1MPa
@@ -62,8 +63,12 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Normal toggle behavior
-        stateManager.toggleState();
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        if (adc_available) {
+          stateManager.toggleState();
+        } else {
+          Serial.println("Recording unavailable: ADS1015 initialization failed");
+        }
+        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     } else {
@@ -121,7 +126,7 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Exited file list mode - display will be restored by StateManager
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     }
@@ -132,7 +137,7 @@ void handleButtonInput() {
     if (stateManager.getCurrentState() == FILE_LIST) {
       // Return to STANDBY (waveform screen)
       stateManager.transitionToStandby();
-      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+      displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                           wifiManager.isConnected(), mqttManager.isConnected());
     }
   }
@@ -148,9 +153,13 @@ void setup() {
   M5.begin();
   
   // Initialize sensor
-  ads.begin();
-  ads.setDataRate(RATE_ADS1015_3300SPS);
-  ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
+  adc_available = ads.begin();
+  if (adc_available) {
+    ads.setDataRate(RATE_ADS1015_3300SPS);
+    ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
+  } else {
+    Serial.println("ADS1015 initialization failed; sensor sampling disabled");
+  }
 
   // Initialize managers
   displayManager.init();
@@ -166,7 +175,7 @@ void setup() {
   stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
-  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+  displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 }
 
@@ -184,7 +193,7 @@ void loop() {
   static unsigned long last_status_update = 0;
   if (now - last_status_update >= 2000) {
     last_status_update = now;
-    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+    displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                         wifiManager.isConnected(), mqttManager.isConnected());
   }
   
@@ -199,7 +208,7 @@ void loop() {
   }
   
   // Process sensor data at regular intervals
-  if (now - last_sample_time >= interval_ms) {
+  if (adc_available && now - last_sample_time >= interval_ms) {
     last_sample_time = now;
 
     // Read sensor data and convert to original voltage (before voltage divider)

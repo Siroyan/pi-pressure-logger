@@ -77,11 +77,24 @@ void DisplayManager::drawPressureText(float p0, float p1) {
   }
 }
 
-void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, bool wifi_connected, bool mqtt_connected) {
-  M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
+void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
+                                          bool wifi_connected, bool mqtt_connected) {
+  M5.Lcd.fillRect(30, 225, 220, 10, BLACK);  // Clear area
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
   
+  // ADC Status
+  if (adc_available) {
+    M5.Lcd.setTextColor(GREEN);
+    M5.Lcd.print("ADC");
+  } else {
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.print("ADC!");
+  }
+
+  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.print(" ");
+
   // SD Status
   if (sd_available) {
     if (sd_recording) {
