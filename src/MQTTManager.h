@@ -3,11 +3,13 @@
 
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include <freertos/semphr.h>
 
 class MQTTManager {
 private:
   WiFiClientSecure* wifiClient;
   PubSubClient* client;
+  SemaphoreHandle_t client_mutex;
   bool mqtt_connected;
   unsigned long last_mqtt_attempt;
   unsigned long last_mqtt_send_time;
@@ -34,6 +36,7 @@ public:
   
 private:
   void reconnect();
+  bool isConnectedUnsafe();
 };
 
 #endif // MQTT_MANAGER_H

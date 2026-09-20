@@ -2,7 +2,7 @@
 
 MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
                          const char* name, const char* root_ca, const char* cert, const char* key)
-  : wifiClient(wifi_client), mqtt_connected(false), last_mqtt_attempt(0), last_mqtt_send_time(0),
+  : wifiClient(wifi_client), client_mutex(xSemaphoreCreateRecursiveMutex()), mqtt_connected(false), last_mqtt_attempt(0), last_mqtt_send_time(0),
     aws_iot_endpoint(endpoint), aws_iot_port(port), thing_name(name),
     aws_root_ca(root_ca), device_cert(cert), device_key(key) {
   
@@ -21,10 +21,12 @@ void MQTTManager::init() {
 }
 
 void MQTTManager::loop() {
+  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
   if (!client->connected()) {
     reconnect();
   }
   client->loop();
+  xSemaphoreGiveRecursive(client_mutex);
 }
 
 void MQTTManager::reconnect() {
@@ -47,11 +49,22 @@ void MQTTManager::reconnect() {
 }
 
 bool MQTTManager::isConnected() {
+  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  bool connected = isConnectedUnsafe();
+  xSemaphoreGiveRecursive(client_mutex);
+  return connected;
+}
+
+bool MQTTManager::isConnectedUnsafe() {
   return mqtt_connected && client->connected();
 }
 
 void MQTTManager::publishData(float p0, float p1) {
-  if (!isConnected()) return;
+  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  if (!isConnectedUnsafe()) {
+    xSemaphoreGiveRecursive(client_mutex);
+    return;
+  }
   
   String payload = "{";
   payload += "\"timestamp\":" + String(millis());
@@ -69,12 +82,18 @@ void MQTTManager::publishData(float p0, float p1) {
   } else {
     Serial.println("Failed to publish data");
   }
+  xSemaphoreGiveRecursive(client_mutex);
 }
 
 bool MQTTManager::canPublish(unsigned long now) {
-  return isConnected() && (now - last_mqtt_send_time >= mqtt_send_interval);
+  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  bool can_publish = isConnectedUnsafe() && (now - last_mqtt_send_time >= mqtt_send_interval);
+  xSemaphoreGiveRecursive(client_mutex);
+  return can_publish;
 }
 
 void MQTTManager::updateLastSendTime(unsigned long now) {
+  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
   last_mqtt_send_time = now;
+  xSemaphoreGiveRecursive(client_mutex);
 }
