@@ -25,7 +25,7 @@ public:
   
   void startRecording();
   void stopRecording();
-  void logData(float p0, float p1);
+  void logData(float p0, float p1, bool p0_out_of_range, bool p1_out_of_range);
   
   // File management functions
   std::vector<String> getLogFileList();

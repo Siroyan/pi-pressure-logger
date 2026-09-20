@@ -3,6 +3,15 @@
 #include "MQTTManager.h"
 #include "DisplayManager.h"
 
+namespace {
+constexpr float kDisplayPressureMin = 0.0f;
+constexpr float kDisplayPressureMax = 0.5f;
+
+bool isOutsideDisplayRange(float pressure) {
+  return pressure < kDisplayPressureMin || pressure > kDisplayPressureMax;
+}
+}
+
 StateManager::StateManager() : currentState(STANDBY), stateChangeTime(0), 
   sdManager(nullptr), mqttManager(nullptr), displayManager(nullptr) {}
 
@@ -121,14 +130,17 @@ void StateManager::handleStandbyState() {
 }
 
 void StateManager::handleRecordingState(float p0, float p1, unsigned long now) {
+  bool p0_out_of_range = isOutsideDisplayRange(p0);
+  bool p1_out_of_range = isOutsideDisplayRange(p1);
+
   // Log data to SD card
   if (sdManager && sdManager->isRecording()) {
-    sdManager->logData(p0, p1);
+    sdManager->logData(p0, p1, p0_out_of_range, p1_out_of_range);
   }
   
   // Publish data via MQTT (at 500ms intervals)
   if (mqttManager && mqttManager->canPublish(now)) {
-    mqttManager->publishData(p0, p1);
+    mqttManager->publishData(p0, p1, p0_out_of_range, p1_out_of_range);
     mqttManager->updateLastSendTime(now);
   }
 }

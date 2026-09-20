@@ -211,10 +211,6 @@ void loop() {
     float p0 = (v0_original - 1.0f) / 4.0f; // Pressure in MPa
     float p1 = (v1_original - 1.0f) / 4.0f;
     
-    // Constrain pressure to 0-0.5 MPa range
-    p0 = constrain(p0, 0.0f, 0.5f);
-    p1 = constrain(p1, 0.0f, 0.5f);
-    
     // Process data through state machine
     stateManager.processSensorData(p0, p1, now);
   }

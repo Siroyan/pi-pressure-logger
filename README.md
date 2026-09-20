@@ -95,16 +95,17 @@ pio device monitor
 - サンプリング周波数: 100 Hz
 - 波形バッファ: 20 秒分（2,000 サンプル）
 - 圧力単位: MPa
-- 表示・保存・送信範囲: 0〜0.5 MPa
+- 波形表示範囲: 0〜0.5 MPa
+- 保存・送信値: 変換後の値を制限せず記録し、波形表示範囲外フラグを付与
 
 SD カードには `pressure_log_YYYY-MM-DD-HH-MM-SS.csv` という名前で保存します。NTP 同期に失敗した場合は、起動後の `millis()` を使ったファイル名にフォールバックします。
 
 CSV の形式は次のとおりです。
 
 ```csv
-Timestamp(ms),CH0(MPa),CH1(MPa)
-0,0.1234,0.2345
-10,0.1235,0.2344
+Timestamp(ms),CH0(MPa),CH1(MPa),CH0OutOfRange,CH1OutOfRange
+0,0.1234,0.2345,0,0
+10,0.6235,-0.0100,1,1
 ```
 
 `Timestamp(ms)` は記録開始からの経過時間です。NTP 同期済みの場合、ファイルの先頭には記録開始時刻を示すコメント行も追加されます。
@@ -121,7 +122,9 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
   "timestamp": 123456789,
   "device": "PressureLogger",
   "ch0": 0.1234,
-  "ch1": 0.2345
+  "ch1": 0.2345,
+  "ch0_out_of_range": false,
+  "ch1_out_of_range": false
 }
 ```
 
