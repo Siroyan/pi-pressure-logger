@@ -77,13 +77,17 @@ void DisplayManager::drawPressureText(float p0, float p1) {
   }
 }
 
-void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, bool wifi_connected, bool mqtt_connected) {
+void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, bool sd_error,
+                                          bool wifi_connected, bool mqtt_connected) {
   M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
   
   // SD Status
-  if (sd_available) {
+  if (sd_error) {
+    M5.Lcd.setTextColor(RED);
+    M5.Lcd.print("SD:ERR");
+  } else if (sd_available) {
     if (sd_recording) {
       M5.Lcd.setTextColor(RED);
       M5.Lcd.print("SD:REC");

@@ -63,7 +63,7 @@ void handleButtonInput() {
       } else {
         // Normal toggle behavior
         stateManager.toggleState();
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     } else {
@@ -121,7 +121,7 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Exited file list mode - display will be restored by StateManager
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     }
@@ -132,7 +132,7 @@ void handleButtonInput() {
     if (stateManager.getCurrentState() == FILE_LIST) {
       // Return to STANDBY (waveform screen)
       stateManager.transitionToStandby();
-      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                           wifiManager.isConnected(), mqttManager.isConnected());
     }
   }
@@ -166,7 +166,7 @@ void setup() {
   stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
-  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 }
 
@@ -184,7 +184,7 @@ void loop() {
   static unsigned long last_status_update = 0;
   if (now - last_status_update >= 2000) {
     last_status_update = now;
-    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                         wifiManager.isConnected(), mqttManager.isConnected());
   }
   
