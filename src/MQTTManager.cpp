@@ -50,7 +50,7 @@ bool MQTTManager::isConnected() {
   return mqtt_connected && client->connected();
 }
 
-void MQTTManager::publishData(float p0, float p1, bool p0_out_of_range, bool p1_out_of_range) {
+void MQTTManager::publishData(float p0, float p1) {
   if (!isConnected()) return;
   
   String payload = "{";
@@ -58,8 +58,6 @@ void MQTTManager::publishData(float p0, float p1, bool p0_out_of_range, bool p1_
   payload += ",\"device\":\"" + String(thing_name) + "\"";
   payload += ",\"ch0\":" + String(p0, 4);
   payload += ",\"ch1\":" + String(p1, 4);
-  payload += ",\"ch0_out_of_range\":" + String(p0_out_of_range ? "true" : "false");
-  payload += ",\"ch1_out_of_range\":" + String(p1_out_of_range ? "true" : "false");
   payload += "}";
   
   // Publish to both topics with same data
