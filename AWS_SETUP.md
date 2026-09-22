@@ -1,79 +1,54 @@
-# AWS IoT Core Setup Guide
+# AWS IoT Core セットアップガイド
 
-## Prerequisites
-1. AWS Account with IoT Core access
-2. AWS CLI installed (optional but recommended)
+> 最終確認日: 2026-09-22
+>
+> AWS Management Consoleのメニュー名・画面構成・ボタン名は変更されることがあります。本書は上記日付時点のAWS公式ドキュメントを基準にしています。画面が一致しない場合は、本文中の公式リンクにある最新手順を優先してください。
 
-## Step 1: Create AWS IoT Thing
+この文書では、M5StackからAWS IoT CoreへMQTT over TLSで圧力データを送信し、AWS IoTコンソールで受信を確認するまでを説明します。
 
-1. Go to AWS IoT Core Console
-2. Navigate to "Manage" > "Things"
-3. Click "Create things" > "Create single thing"
-4. Enter thing name: `PressureLogger`
-5. Click "Next" and proceed with default settings
+## このプロジェクトの接続仕様
 
-## Step 2: Generate Certificates
+| 項目 | 値 |
+| --- | --- |
+| Thing名 | `PressureLogger` |
+| MQTTクライアントID | `PressureLogger`（`thing_name`の値） |
+| 認証 | X.509デバイス証明書 |
+| プロトコル／ポート | MQTT over TLS／`8883` |
+| Publish先 | `pressure_logger/ch0`、`pressure_logger/ch1` |
+| 送信間隔 | 記録中に約500 ms間隔 |
+| Subscribe | デバイス側では使用しない |
 
-1. In the thing creation process, choose "Auto-generate a new certificate"
-2. Download the following files:
-   - `xxxxxxxxxx-certificate.pem.crt` (Device Certificate)
-   - `xxxxxxxxxx-private.pem.key` (Private Key)
-   - `xxxxxxxxxx-public.pem.key` (Public Key - not needed for this project)
-3. Download the Amazon Root CA certificate from:
-   - https://www.amazontrust.com/repository/AmazonRootCA1.pem
+AWS IoT Coreは、X.509クライアント証明書を使うMQTT接続でポート8883をサポートしています。詳細は[AWS IoT Coreの通信プロトコル](https://docs.aws.amazon.com/iot/latest/developerguide/protocols.html)を参照してください。
 
-## Step 3: Update Certificate Files
+## 前提条件
 
-1. Copy the template file:
-   ```bash
-   cp secure/aws_certificates.template.h secure/aws_certificates.h
-   ```
-2. Open `secure/aws_certificates.h`
-3. Replace the placeholder certificates with your actual certificates:
+- AWSアカウント
+- AWS IoT CoreのThing、証明書、ポリシーを作成できる権限
+- M5Stackが接続できるWi-Fi
+- PlatformIO
+- AWS CLI（任意）
 
-### Device Certificate (.crt file)
-Copy the contents of your `xxxxxxxxxx-certificate.pem.crt` file and paste it in the `device_cert` variable:
-```c
-const char* device_cert = R"EOF(
------BEGIN CERTIFICATE-----
-YOUR_DEVICE_CERTIFICATE_CONTENT_HERE
------END CERTIFICATE-----
-)EOF";
+AWS IoT Coreのリソースはリージョンごとに管理されます。Thing、証明書、ポリシー、MQTTテストクライアントでは同じリージョンを選択してください。
+
+## 1. リージョンとアカウントIDを確認する
+
+ポリシー例にある値を自分の環境へ置き換えます。
+
+- `YOUR_REGION`: 例 `ap-northeast-1`
+- `YOUR_ACCOUNT_ID`: 12桁のAWSアカウントID
+
+AWS CLIを設定済みの場合は、次のコマンドで確認できます。
+
+```bash
+aws configure get region
+aws sts get-caller-identity --query Account --output text
 ```
 
-### Private Key (.key file)
-Copy the contents of your `xxxxxxxxxx-private.pem.key` file and paste it in the `device_key` variable:
-```c
-const char* device_key = R"EOF(
------BEGIN RSA PRIVATE KEY-----
-YOUR_PRIVATE_KEY_CONTENT_HERE
------END RSA PRIVATE KEY-----
-)EOF";
-```
+## 2. AWS IoTポリシーを作成する
 
-## Step 4: Update Configuration
+AWS IoTコンソールで、現在の公式手順では **Security → Policies → Create policy** を選択します。画面名が異なる場合は、[AWS公式のIoTリソース作成手順](https://docs.aws.amazon.com/iot/latest/developerguide/create-iot-resources.html)を参照してください。
 
-1. Open `src/main.cpp`
-2. Update the following variables:
-   - `ssid`: Your WiFi network name
-   - `password`: Your WiFi password
-   - `aws_iot_endpoint`: Your AWS IoT endpoint (found in IoT Core Console > Settings)
-   - `thing_name`: Should match your AWS IoT Thing name
-
-Example:
-```c
-const char* ssid = "MyWiFiNetwork";
-const char* password = "MyWiFiPassword";
-const char* aws_iot_endpoint = "a1b2c3d4e5f6g7-ats.iot.us-east-1.amazonaws.com";
-const char* thing_name = "PressureLogger";
-```
-
-## Step 5: Create IoT Policy
-
-1. Go to AWS IoT Core Console > "Secure" > "Policies"
-2. Click "Create policy"
-3. Name: `PressureLoggerPolicy`
-4. Add the following policy document:
+ポリシー名の例は`PressureLoggerPolicy`です。ポリシードキュメントには次を設定します。
 
 ```json
 {
@@ -81,68 +56,229 @@ const char* thing_name = "PressureLogger";
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": [
-        "iot:Connect",
-        "iot:Publish"
-      ],
+      "Action": "iot:Connect",
+      "Resource": "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:client/PressureLogger"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iot:Publish",
       "Resource": [
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:client/PressureLogger",
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/data"
+        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch0",
+        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch1"
       ]
     }
   ]
 }
 ```
 
-## Step 6: Attach Policy to Certificate
+`YOUR_REGION`と`YOUR_ACCOUNT_ID`は実際の値へ置き換えてください。
 
-1. Go to "Secure" > "Certificates"
-2. Select your certificate
-3. Click "Actions" > "Attach policy"
-4. Select `PressureLoggerPolicy`
-5. Click "Actions" > "Attach thing"
-6. Select `PressureLogger`
+このプロジェクトはAWSからの受信を実装していないため、`iot:Subscribe`と`iot:Receive`は不要です。クライアントIDには`thing_name`が使われるため、`client/PressureLogger`と一致させます。ARNと最小権限の考え方は[AWS公式のConnect/Publishポリシー例](https://docs.aws.amazon.com/iot/latest/developerguide/connect-and-pub.html)を参照してください。
 
-## Step 7: Test Connection
+## 3. Thingとデバイス証明書を作成する
 
-1. Upload the code to your M5Stack
-2. Monitor the Serial output for connection status
-3. Check AWS IoT Core Console > "Test" > "MQTT test client"
-4. Subscribe to topic: `pressure_logger/data`
-5. You should see JSON messages with sensor data
+現在の公式手順では **All devices → Things** から作成します。
 
-## Data Format
+1. **Create things**を選択する。
+2. **Create a single thing**を選択する。
+3. Thing名に`PressureLogger`を入力する。
+4. 証明書設定で **Auto-generate a new certificate (recommended)** を選択する。
+5. `PressureLoggerPolicy`を選択する。
+6. Thingを作成する。
+7. 表示された証明書と秘密鍵を、画面を閉じる前にダウンロードする。
 
-The device publishes data in the following JSON format:
+必要なファイルは次のとおりです。
+
+| ファイル | 用途 |
+| --- | --- |
+| Device certificate | デバイス証明書。通常は`*-certificate.pem.crt` |
+| Private key | 秘密鍵。通常は`*-private.pem.key` |
+| Amazon Root CA 1 | AWS IoTエンドポイントの検証 |
+| Public key | このプロジェクトでは使用しない |
+
+証明書作成画面を離れると秘密鍵は再ダウンロードできません。AWS公式の最新手順と注意事項は[AWS IoTリソースの作成](https://docs.aws.amazon.com/iot/latest/developerguide/create-iot-resources.html)を確認してください。
+
+Amazon Root CA 1は公式URLから取得できます。
+
+- [Amazon Root CA 1](https://www.amazontrust.com/repository/AmazonRootCA1.pem)
+
+### リソースを別々に作成した場合
+
+証明書の詳細画面で次を確認します。
+
+- 証明書の状態が **Active**
+- `PressureLogger` Thingがアタッチされている
+- `PressureLoggerPolicy`がアタッチされている
+
+現行手順は[Thingまたはポリシーを証明書へアタッチする方法](https://docs.aws.amazon.com/iot/latest/developerguide/attach-to-cert.html)を参照してください。
+
+## 4. デバイスデータエンドポイントを確認する
+
+AWS CLIではATSデータエンドポイントを取得できます。
+
+```bash
+aws iot describe-endpoint \
+  --endpoint-type iot:Data-ATS \
+  --region YOUR_REGION \
+  --query endpointAddress \
+  --output text
+```
+
+出力例:
+
+```text
+a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com
+```
+
+AWS IoTコンソールでは、設定画面の **Device data endpoint** から確認できます。導線が変わった場合は、[AWS公式のデバイス接続とエンドポイントの説明](https://docs.aws.amazon.com/iot/latest/developerguide/iot-connect-devices.html)を参照してください。
+
+設定には`https://`や`mqtts://`を付けず、ホスト名だけを使用します。
+
+## 5. ローカル設定ファイルを作成する
+
+```bash
+cp secure/config.h.example secure/config.h
+cp secure/aws_certificates.h.example secure/aws_certificates.h
+```
+
+これらの実ファイルは`.gitignore`の対象です。秘密鍵をGitへコミットしないでください。
+
+### `secure/config.h`
+
+```cpp
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+const char* aws_iot_endpoint =
+    "a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com";
+const int aws_iot_port = 8883;
+const char* thing_name = "PressureLogger";
+```
+
+`secure/config.h.example`の`aws_iot_topic`は現在の実装では参照されません。実際の送信先は`src/MQTTManager.cpp`に定義された2トピックです。
+
+### `secure/aws_certificates.h`
+
+デバイス証明書と秘密鍵を、PEMのBEGIN/END行を含めて設定します。
+
+```cpp
+const char* device_cert = R"EOF(
+-----BEGIN CERTIFICATE-----
+デバイス証明書の内容
+-----END CERTIFICATE-----
+)EOF";
+
+const char* device_key = R"EOF(
+-----BEGIN RSA PRIVATE KEY-----
+秘密鍵の内容
+-----END RSA PRIVATE KEY-----
+)EOF";
+```
+
+秘密鍵のBEGIN行は、ダウンロードしたファイルの形式を変更せず使用してください。`secure/aws_certificates.h.example`にはAmazon Root CA 1が含まれていますが、公式から取得した内容と一致することを確認してください。
+
+## 6. ビルドして書き込む
+
+```bash
+git submodule update --init --recursive
+pio run
+pio run --target upload
+pio device monitor
+```
+
+シリアルモニターは115200 baudです。正常に接続すると、次のようなメッセージが表示されます。
+
+```text
+WiFi connected!
+Time synchronized successfully
+AWS IoT certificates loaded
+connected to AWS IoT Core
+```
+
+LCDの`AWS`表示も緑になります。
+
+## 7. MQTTメッセージを確認する
+
+現在の公式手順では、AWS IoTコンソールの **Test → MQTT test client** を開きます。画面が異なる場合は、[AWS公式のMQTTテストクライアント手順](https://docs.aws.amazon.com/iot/latest/developerguide/view-mqtt-messages.html)を参照してください。
+
+1. Thingと同じリージョンを選択していることを確認する。
+2. **Subscribe to a topic**を開く。
+3. Topic filterに`pressure_logger/#`を入力する。
+4. **Subscribe**を選択する。
+5. M5StackのAボタンを押して記録状態にする。
+
+この実装は記録状態のときだけMQTT Publishを行います。待機状態ではAWSへ接続済みでも送信しません。
+
+正常なら、約500 msごとに次の2トピックへ同じJSONが届きます。
+
+- `pressure_logger/ch0`
+- `pressure_logger/ch1`
+
 ```json
 {
   "timestamp": 123456789,
   "device": "PressureLogger",
-  "ch0": 5.234,
-  "ch1": 3.567
+  "ch0": 0.1234,
+  "ch1": 0.2345
 }
 ```
 
-## Troubleshooting
+`timestamp`はUnix時刻ではなく、M5Stack起動後の`millis()`です。
 
-- **Certificate errors**: Ensure certificates are correctly copied with proper BEGIN/END markers
-- **Connection timeouts**: Check your WiFi credentials and AWS endpoint
-- **Permission denied**: Verify the IoT policy allows publish to your topic
-- **SSL handshake failed**: Ensure you're using the correct Root CA certificate
+## 8. A-03の通信分離を確認する
 
-## Security Notes
+テスト用のWi-Fi環境と証明書で行ってください。
 
-- The `secure/` folder is excluded from git via .gitignore to protect your credentials
-- Keep your private key secure and never commit it to public repositories  
-- Each developer should have their own certificates for development
-- Consider using AWS IoT Device Management for production deployments
-- Regularly rotate certificates for enhanced security
-- If certificates are accidentally committed, immediately revoke them in AWS Console
+1. SD記録とMQTT受信が動作していることを確認する。
+2. 記録中にWi-Fiアクセスポイントを一時停止する。
+3. シリアルで再接続処理を確認する。
+4. Wi-Fiを再開する。
+5. `connected to AWS IoT Core`が再表示され、MQTT受信が再開することを確認する。
+6. `Dropped pressure samples: N`が表示された場合は、キュー満杯による欠測数`N`を記録する。
 
-## Repository Security
+A-03はセンサー取得を通信保守タスクから分離しますが、AWS切断中のMQTTデータを再送する機能ではありません。切断中のクラウドデータは欠測します。キューは512サンプル、100 Hzで約5.12秒分です。通信断の長さ、欠測数、再接続までの時間を記録してください。
 
-This project uses a secure folder structure:
-- `secure/aws_certificates.h` - Contains actual certificates (gitignored)
-- `secure/README.md` - Security documentation
+## トラブルシューティング
 
-The entire `secure/` folder is protected by .gitignore to prevent accidental commits of sensitive credentials.
+### Wi-Fiへ接続できない
+
+- `ssid`と`password`を確認する。
+- シリアルの`WiFi connection failed!`を確認する。
+
+### AWS表示が赤い、またはMQTT接続に失敗する
+
+- `aws_iot_endpoint`が同じリージョンのATSデータエンドポイントか確認する。
+- エンドポイントにプロトコル名やパスを付けていないことを確認する。
+- `thing_name`、クライアントID、ポリシーの`client/PressureLogger`が一致していることを確認する。
+- 証明書がActiveで、Thingとポリシーがアタッチされていることを確認する。
+- 証明書・秘密鍵・Root CAの組み合わせを確認する。
+- NTP同期とポート8883への外向き通信を確認する。
+
+### 接続済みだがメッセージが届かない
+
+- M5Stackが記録状態か確認する。
+- MQTTテストクライアントのリージョンと`pressure_logger/#`を確認する。
+- ポリシーが両トピックへの`iot:Publish`を許可していることを確認する。
+- シリアルの`Data published to AWS IoT`または`Failed to publish data`を確認する。
+
+### `Not authorized`になる
+
+- ポリシーのリージョン、アカウントID、クライアントID、トピックARNを確認する。
+- IAMポリシーではなく、AWS IoTポリシーがデバイス証明書へアタッチされていることを確認する。
+
+## セキュリティ上の注意
+
+- 秘密鍵と実際の`secure/*.h`をコミットしない。
+- 開発者・デバイスごとに証明書を分ける。
+- 不要な証明書は無効化または削除する。
+- 秘密鍵を公開した場合はAWS IoT側で直ちに証明書を無効化し、新しい証明書を発行する。
+- 本番環境では`Resource: "*"`を避け、必要なクライアントIDとトピックだけを許可する。
+
+## AWS公式資料
+
+- [AWS IoTリソースの作成](https://docs.aws.amazon.com/iot/latest/developerguide/create-iot-resources.html)
+- [デバイス通信プロトコルとポート](https://docs.aws.amazon.com/iot/latest/developerguide/protocols.html)
+- [AWS IoTデバイスエンドポイント](https://docs.aws.amazon.com/iot/latest/developerguide/iot-connect-devices.html)
+- [Connect/Publishポリシー例](https://docs.aws.amazon.com/iot/latest/developerguide/connect-and-pub.html)
+- [Thing・ポリシーと証明書のアタッチ](https://docs.aws.amazon.com/iot/latest/developerguide/attach-to-cert.html)
+- [MQTTテストクライアント](https://docs.aws.amazon.com/iot/latest/developerguide/view-mqtt-messages.html)

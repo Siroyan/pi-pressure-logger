@@ -95,7 +95,8 @@ pio device monitor
 - サンプリング周波数: 100 Hz
 - 波形バッファ: 20 秒分（2,000 サンプル）
 - 圧力単位: MPa
-- 表示・保存・送信範囲: 0〜0.5 MPa
+- 波形表示範囲: 0〜0.5 MPa
+- 保存・送信値: 変換後の値を制限せず記録・送信
 
 SD カードには `pressure_log_YYYY-MM-DD-HH-MM-SS.csv` という名前で保存します。NTP 同期に失敗した場合は、起動後の `millis()` を使ったファイル名にフォールバックします。
 
@@ -104,17 +105,14 @@ CSV の形式は次のとおりです。
 ```csv
 Timestamp(ms),CH0(MPa),CH1(MPa)
 0,0.1234,0.2345
-10,0.1235,0.2344
+10,0.6235,-0.0100
 ```
 
 `Timestamp(ms)` は記録開始からの経過時間です。NTP 同期済みの場合、ファイルの先頭には記録開始時刻を示すコメント行も追加されます。
 
 ## AWS IoT MQTT
 
-記録中、接続済みであれば 500 ms 間隔で同じ JSON ペイロードを次の 2 トピックへ送信します。
-
-- `pressure_logger/ch0`
-- `pressure_logger/ch1`
+記録中、接続済みであれば 500 ms 間隔で JSON ペイロードを `pressure_logger/data` トピックへ送信します。送信先は `secure/config.h` の `aws_iot_topic` で設定できます。
 
 ```json
 {
@@ -125,7 +123,7 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 }
 ```
 
-`timestamp` は Unix 時刻ではなく、デバイス起動後の `millis()` です。AWS IoT ポリシーには、Thing の接続権限と上記 2 トピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
+`timestamp` は Unix 時刻ではなく、デバイス起動後の `millis()` です。AWS IoT ポリシーには、Thing の接続権限と設定したトピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
 
 ## プロジェクト構成
 
