@@ -1,5 +1,9 @@
 #include "DisplayManager.h"
 
+namespace {
+constexpr unsigned long kSdErrorBlinkHalfPeriodMs = 500;
+}
+
 DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1.0), 
   selected_file_index(0), scroll_offset(0) {}
 
@@ -77,13 +81,18 @@ void DisplayManager::drawPressureText(float p0, float p1) {
   }
 }
 
-void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, bool wifi_connected, bool mqtt_connected) {
+void DisplayManager::drawConnectionStatus(bool sd_available, bool sd_recording, bool sd_error,
+                                          bool wifi_connected, bool mqtt_connected) {
   M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
   
   // SD Status
-  if (sd_available) {
+  if (sd_error) {
+    bool showRed = (millis() / kSdErrorBlinkHalfPeriodMs) % 2 == 0;
+    M5.Lcd.setTextColor(showRed ? RED : YELLOW);
+    M5.Lcd.print("SD:ERR");
+  } else if (sd_available) {
     if (sd_recording) {
       M5.Lcd.setTextColor(RED);
       M5.Lcd.print("SD:REC");

@@ -8,6 +8,8 @@
 #include "SDManager.h"
 #include "DisplayManager.h"
 #include "TimeManager.h"
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 Adafruit_ADS1015 ads;
 // Voltage divider: 5V -> 2.5V (R1=47k, R2=47k)
@@ -22,8 +24,18 @@ float ch0_buffer[buffer_size] = {0};
 float ch1_buffer[buffer_size] = {0};
 int buf_index = 0;
 
-unsigned long last_sample_time = 0;
 const int interval_ms = 1000 / sampling_rate;
+
+struct PressureSample {
+  float p0;
+  float p1;
+  unsigned long timestamp;
+};
+
+const int sample_queue_size = 512;
+const int max_samples_per_loop = 4;
+QueueHandle_t sample_queue = nullptr;
+volatile unsigned long dropped_sample_count = 0;
 
 // Button debounce variables
 unsigned long button_press_time = 0;
@@ -32,7 +44,8 @@ const int min_press_duration = 50; // Minimum press duration in ms to be conside
 // Manager instances
 WiFiClientSecure wifiClientSecure;
 WiFiManager wifiManager(ssid, password);
-MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name, aws_root_ca, device_cert, device_key);
+MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name,
+                        aws_iot_topic, aws_root_ca, device_cert, device_key);
 SDManager sdManager;
 DisplayManager displayManager;
 TimeManager timeManager;
@@ -63,7 +76,7 @@ void handleButtonInput() {
       } else {
         // Normal toggle behavior
         stateManager.toggleState();
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     } else {
@@ -121,7 +134,7 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Exited file list mode - display will be restored by StateManager
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     }
@@ -132,7 +145,7 @@ void handleButtonInput() {
     if (stateManager.getCurrentState() == FILE_LIST) {
       // Return to STANDBY (waveform screen)
       stateManager.transitionToStandby();
-      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                           wifiManager.isConnected(), mqttManager.isConnected());
     }
   }
@@ -142,6 +155,46 @@ void handleNetworkMaintenance() {
   // Check WiFi connection and maintain MQTT
   wifiManager.checkConnection();
   mqttManager.loop();
+}
+
+void samplingTask(void* parameter) {
+  TickType_t last_wake_time = xTaskGetTickCount();
+  const TickType_t sample_period = pdMS_TO_TICKS(interval_ms);
+
+  while (true) {
+    vTaskDelayUntil(&last_wake_time, sample_period);
+
+    float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f;
+    float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
+
+    PressureSample sample;
+    sample.p0 = (v0_original - 1.0f) / 4.0f;
+    sample.p1 = (v1_original - 1.0f) / 4.0f;
+    sample.timestamp = millis();
+
+    if (xQueueSend(sample_queue, &sample, 0) != pdTRUE) {
+      dropped_sample_count++;
+    }
+  }
+}
+
+void networkTask(void* parameter) {
+  unsigned long last_time_sync = 0;
+
+  while (true) {
+    handleNetworkMaintenance();
+
+    unsigned long now = millis();
+    if (wifiManager.isConnected() && (now - last_time_sync >= 30UL * 60UL * 1000UL)) {
+      last_time_sync = now;
+      if (!timeManager.isTimeSynced()) {
+        Serial.println("Re-synchronizing time...");
+        timeManager.syncTime();
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
 }
 
 void setup() {
@@ -166,8 +219,20 @@ void setup() {
   stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
-  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
+
+  sample_queue = xQueueCreate(sample_queue_size, sizeof(PressureSample));
+  if (!sample_queue) {
+    Serial.println("Failed to create pressure sample queue");
+    return;
+  }
+
+  xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1);
+  // PubSubClient may busy-wait while connecting. Keep this task at idle priority
+  // so the Core 0 idle task can continue resetting the task watchdog.
+  xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
+                          tskIDLE_PRIORITY, nullptr, 0);
 }
 
 void loop() {
@@ -177,41 +242,27 @@ void loop() {
   // Handle user input
   handleButtonInput();
   
-  // Handle network maintenance
-  handleNetworkMaintenance();
-  
   // Update connection status display periodically
   static unsigned long last_status_update = 0;
-  if (now - last_status_update >= 2000) {
+  if (now - last_status_update >= 500) {
     last_status_update = now;
-    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), 
+    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
                                         wifiManager.isConnected(), mqttManager.isConnected());
   }
   
-  // Re-synchronize time periodically (every 30 minutes)
-  static unsigned long last_time_sync = 0;
-  if (wifiManager.isConnected() && (now - last_time_sync >= 30 * 60 * 1000)) {
-    last_time_sync = now;
-    if (!timeManager.isTimeSynced()) {
-      Serial.println("Re-synchronizing time...");
-      timeManager.syncTime();
-    }
+  PressureSample sample;
+  int processed_samples = 0;
+  while (sample_queue && processed_samples < max_samples_per_loop &&
+         xQueueReceive(sample_queue, &sample, 0) == pdTRUE) {
+    stateManager.processSensorData(sample.p0, sample.p1, sample.timestamp);
+    processed_samples++;
   }
-  
-  // Process sensor data at regular intervals
-  if (now - last_sample_time >= interval_ms) {
-    last_sample_time = now;
 
-    // Read sensor data and convert to original voltage (before voltage divider)
-    // ADS1015 GAIN_TWOTHIRDS: 3mV per LSB, voltage divider doubles the original voltage
-    float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f; // Convert to original 0-5V
-    float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
-    
-    // Convert voltage to pressure: 1V=0MPa, 5V=1MPa -> P = (V-1)/4
-    float p0 = (v0_original - 1.0f) / 4.0f; // Pressure in MPa
-    float p1 = (v1_original - 1.0f) / 4.0f;
-    
-    // Process data through state machine
-    stateManager.processSensorData(p0, p1, now);
+  static unsigned long last_drop_report = 0;
+  static unsigned long reported_drop_count = 0;
+  if (now - last_drop_report >= 5000 && dropped_sample_count != reported_drop_count) {
+    last_drop_report = now;
+    reported_drop_count = dropped_sample_count;
+    Serial.println("Dropped pressure samples: " + String(reported_drop_count));
   }
 }

@@ -112,10 +112,7 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 
 ## AWS IoT MQTT
 
-記録中、接続済みであれば 500 ms 間隔で同じ JSON ペイロードを次の 2 トピックへ送信します。
-
-- `pressure_logger/ch0`
-- `pressure_logger/ch1`
+記録中、接続済みであれば 500 ms 間隔で JSON ペイロードを `pressure_logger/data` トピックへ送信します。送信先は `secure/config.h` の `aws_iot_topic` で設定できます。
 
 ```json
 {
@@ -126,7 +123,7 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 }
 ```
 
-`timestamp` は Unix 時刻ではなく、デバイス起動後の `millis()` です。AWS IoT ポリシーには、Thing の接続権限と上記 2 トピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
+`timestamp` は Unix 時刻ではなく、デバイス起動後の `millis()` です。AWS IoT ポリシーには、Thing の接続権限と設定したトピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
 
 ## プロジェクト構成
 

@@ -2,7 +2,7 @@
 #include "TimeManager.h"
 #include <algorithm>
 
-SDManager::SDManager() : sd_available(false), log_filename(""), session_start_time(0), recording(false), timeManager(nullptr) {}
+SDManager::SDManager() : sd_available(false), log_filename(""), session_start_time(0), recording(false), write_error(false), timeManager(nullptr) {}
 
 void SDManager::setTimeManager(TimeManager* tm) {
   timeManager = tm;
@@ -35,6 +35,10 @@ bool SDManager::isRecording() {
   return recording;
 }
 
+bool SDManager::hasWriteError() {
+  return write_error;
+}
+
 String SDManager::createLogFile() {
   String filename;
   
@@ -55,6 +59,12 @@ String SDManager::createLogFile() {
     filename = "/pressure_log_" + String(timestamp) + ".csv";
   }
   
+  filename = createUniqueFilename(filename);
+  if (filename.length() == 0) {
+    Serial.println("Failed to allocate a unique log filename");
+    return "";
+  }
+
   File file = SD.open(filename.c_str(), FILE_WRITE);
   if (file) {
     // Write CSV header with timestamp info
@@ -74,15 +84,50 @@ String SDManager::createLogFile() {
   return "";
 }
 
-void SDManager::startRecording() {
-  if (!sd_available) return;
+String SDManager::createUniqueFilename(const String& filename) {
+  if (!SD.exists(filename.c_str())) {
+    return filename;
+  }
+
+  const int extensionIndex = filename.lastIndexOf('.');
+  const String baseName = extensionIndex >= 0 ? filename.substring(0, extensionIndex) : filename;
+  const String extension = extensionIndex >= 0 ? filename.substring(extensionIndex) : "";
+
+  for (unsigned int suffix = 1; suffix < 10000; suffix++) {
+    String paddedSuffix = String(suffix);
+    while (paddedSuffix.length() < 4) {
+      paddedSuffix = "0" + paddedSuffix;
+    }
+
+    String candidate = baseName + "_" + paddedSuffix + extension;
+    if (!SD.exists(candidate.c_str())) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+bool SDManager::startRecording() {
+  write_error = false;
+  recording = false;
+  log_filename = "";
+
+  if (!sd_available) {
+    write_error = true;
+    return false;
+  }
   
   log_filename = createLogFile();
   if (log_filename != "") {
     recording = true;
     session_start_time = millis();
     Serial.println("Recording started");
+    return true;
   }
+
+  write_error = true;
+  return false;
 }
 
 void SDManager::stopRecording() {
@@ -92,15 +137,30 @@ void SDManager::stopRecording() {
   }
 }
 
-void SDManager::logData(float p0, float p1) {
-  if (!sd_available || log_filename == "" || !recording) return;
+bool SDManager::logData(float p0, float p1) {
+  if (!sd_available || log_filename == "" || !recording) return false;
   
   File file = SD.open(log_filename.c_str(), FILE_APPEND);
-  if (file) {
-    unsigned long timestamp = millis() - session_start_time;
-    file.println(String(timestamp) + "," + String(p0, 4) + "," + String(p1, 4));
-    file.close();
+  if (!file) {
+    recording = false;
+    write_error = true;
+    Serial.println("Failed to open log file for append; recording stopped");
+    return false;
   }
+
+  unsigned long timestamp = millis() - session_start_time;
+  String row = String(timestamp) + "," + String(p0, 4) + "," + String(p1, 4);
+  size_t bytesWritten = file.println(row);
+  file.close();
+
+  if (bytesWritten == 0) {
+    recording = false;
+    write_error = true;
+    Serial.println("Failed to write log data; recording stopped");
+    return false;
+  }
+
+  return true;
 }
 
 std::vector<String> SDManager::getLogFileList() {
