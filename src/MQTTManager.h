@@ -19,13 +19,15 @@ private:
   const char* aws_iot_endpoint;
   int aws_iot_port;
   const char* thing_name;
+  const char* aws_iot_topic;
   const char* aws_root_ca;
   const char* device_cert;
   const char* device_key;
   
 public:
   MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
-              const char* name, const char* root_ca, const char* cert, const char* key);
+              const char* name, const char* topic, const char* root_ca,
+              const char* cert, const char* key);
   
   void init();
   void loop();

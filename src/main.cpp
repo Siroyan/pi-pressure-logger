@@ -43,7 +43,8 @@ const int min_press_duration = 50; // Minimum press duration in ms to be conside
 // Manager instances
 WiFiClientSecure wifiClientSecure;
 WiFiManager wifiManager(ssid, password);
-MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name, aws_root_ca, device_cert, device_key);
+MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name,
+                        aws_iot_topic, aws_root_ca, device_cert, device_key);
 SDManager sdManager;
 DisplayManager displayManager;
 TimeManager timeManager;

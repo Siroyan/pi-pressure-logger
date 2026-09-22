@@ -1,9 +1,10 @@
 #include "MQTTManager.h"
 
 MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
-                         const char* name, const char* root_ca, const char* cert, const char* key)
+                         const char* name, const char* topic, const char* root_ca,
+                         const char* cert, const char* key)
   : wifiClient(wifi_client), client_mutex(xSemaphoreCreateRecursiveMutex()), mqtt_connected(false), last_mqtt_attempt(0), last_mqtt_send_time(0),
-    aws_iot_endpoint(endpoint), aws_iot_port(port), thing_name(name),
+    aws_iot_endpoint(endpoint), aws_iot_port(port), thing_name(name), aws_iot_topic(topic),
     aws_root_ca(root_ca), device_cert(cert), device_key(key) {
   
   client = new PubSubClient(*wifiClient);
@@ -73,14 +74,12 @@ void MQTTManager::publishData(float p0, float p1) {
   payload += ",\"ch1\":" + String(p1, 4);
   payload += "}";
   
-  // Publish to both topics with same data
-  bool ch0_published = client->publish("pressure_logger/ch0", payload.c_str());
-  bool ch1_published = client->publish("pressure_logger/ch1", payload.c_str());
+  bool published = client->publish(aws_iot_topic, payload.c_str());
   
-  if (ch0_published && ch1_published) {
-    Serial.println("Data published to AWS IoT - CH0&CH1: " + payload);
+  if (published) {
+    Serial.println("Data published to AWS IoT [" + String(aws_iot_topic) + "]: " + payload);
   } else {
-    Serial.println("Failed to publish data");
+    Serial.println("Failed to publish data to AWS IoT [" + String(aws_iot_topic) + "]");
   }
   xSemaphoreGiveRecursive(client_mutex);
 }
