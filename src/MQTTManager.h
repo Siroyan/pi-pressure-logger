@@ -15,6 +15,7 @@ private:
   unsigned long last_mqtt_send_time;
   const int mqtt_retry_interval = 5000;
   const int mqtt_send_interval = 500;
+  const int mqtt_socket_timeout = 3;
   
   const char* aws_iot_endpoint;
   int aws_iot_port;

@@ -17,6 +17,7 @@ void MQTTManager::init() {
   wifiClient->setPrivateKey(device_key);
   
   client->setServer(aws_iot_endpoint, aws_iot_port);
+  client->setSocketTimeout(mqtt_socket_timeout);
   
   Serial.println("AWS IoT certificates loaded");
 }
@@ -35,7 +36,6 @@ void MQTTManager::reconnect() {
     return;
   }
   
-  last_mqtt_attempt = millis();
   Serial.print("Attempting AWS IoT connection...");
   
   if (client->connect(thing_name)) {
@@ -46,7 +46,18 @@ void MQTTManager::reconnect() {
     Serial.print("failed, rc=");
     Serial.print(client->state());
     Serial.println(" try again in 5 seconds");
+
+    char tls_error[128];
+    int tls_error_code = wifiClient->lastError(tls_error, sizeof(tls_error));
+    if (tls_error_code != 0) {
+      Serial.print("TLS error: ");
+      Serial.print(tls_error_code);
+      Serial.print(" (");
+      Serial.print(tls_error);
+      Serial.println(")");
+    }
   }
+  last_mqtt_attempt = millis();
 }
 
 bool MQTTManager::isConnected() {

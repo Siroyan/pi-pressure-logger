@@ -228,7 +228,10 @@ void setup() {
   }
 
   xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1);
-  xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr, 1, nullptr, 0);
+  // PubSubClient may busy-wait while connecting. Keep this task at idle priority
+  // so the Core 0 idle task can continue resetting the task watchdog.
+  xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
+                          tskIDLE_PRIORITY, nullptr, 0);
 }
 
 void loop() {
