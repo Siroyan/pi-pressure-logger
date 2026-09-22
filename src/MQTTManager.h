@@ -10,7 +10,7 @@ private:
   WiFiClientSecure* wifiClient;
   PubSubClient* client;
   SemaphoreHandle_t client_mutex;
-  bool mqtt_connected;
+  volatile bool mqtt_connected;
   unsigned long last_mqtt_attempt;
   unsigned long last_mqtt_send_time;
   const int mqtt_retry_interval = 5000;

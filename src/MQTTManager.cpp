@@ -61,7 +61,9 @@ void MQTTManager::reconnect() {
 }
 
 bool MQTTManager::isConnected() {
-  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
+    return mqtt_connected;
+  }
   bool connected = isConnectedUnsafe();
   xSemaphoreGiveRecursive(client_mutex);
   return connected;
@@ -72,7 +74,9 @@ bool MQTTManager::isConnectedUnsafe() {
 }
 
 void MQTTManager::publishData(float p0, float p1) {
-  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
+    return;
+  }
   if (!isConnectedUnsafe()) {
     xSemaphoreGiveRecursive(client_mutex);
     return;
@@ -96,14 +100,18 @@ void MQTTManager::publishData(float p0, float p1) {
 }
 
 bool MQTTManager::canPublish(unsigned long now) {
-  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
+    return false;
+  }
   bool can_publish = isConnectedUnsafe() && (now - last_mqtt_send_time >= mqtt_send_interval);
   xSemaphoreGiveRecursive(client_mutex);
   return can_publish;
 }
 
 void MQTTManager::updateLastSendTime(unsigned long now) {
-  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
+  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
+    return;
+  }
   last_mqtt_send_time = now;
   xSemaphoreGiveRecursive(client_mutex);
 }

@@ -33,6 +33,7 @@ struct PressureSample {
 };
 
 const int sample_queue_size = 512;
+const int max_samples_per_loop = 4;
 QueueHandle_t sample_queue = nullptr;
 volatile unsigned long dropped_sample_count = 0;
 
@@ -250,8 +251,11 @@ void loop() {
   }
   
   PressureSample sample;
-  while (sample_queue && xQueueReceive(sample_queue, &sample, 0) == pdTRUE) {
+  int processed_samples = 0;
+  while (sample_queue && processed_samples < max_samples_per_loop &&
+         xQueueReceive(sample_queue, &sample, 0) == pdTRUE) {
     stateManager.processSensorData(sample.p0, sample.p1, sample.timestamp);
+    processed_samples++;
   }
 
   static unsigned long last_drop_report = 0;
