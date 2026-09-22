@@ -168,8 +168,8 @@ void samplingTask(void* parameter) {
     float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
 
     PressureSample sample;
-    sample.p0 = constrain((v0_original - 1.0f) / 4.0f, 0.0f, 0.5f);
-    sample.p1 = constrain((v1_original - 1.0f) / 4.0f, 0.0f, 0.5f);
+    sample.p0 = (v0_original - 1.0f) / 4.0f;
+    sample.p1 = (v1_original - 1.0f) / 4.0f;
     sample.timestamp = millis();
 
     if (xQueueSend(sample_queue, &sample, 0) != pdTRUE) {
