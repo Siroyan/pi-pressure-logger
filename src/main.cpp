@@ -12,6 +12,7 @@
 #include <freertos/task.h>
 
 Adafruit_ADS1015 ads;
+bool adc_available = false;
 // Voltage divider: 5V -> 2.5V (R1=47k, R2=47k)
 // ADS1015 with GAIN_TWOTHIRDS: 0-6.144V range, LSB = 3mV
 // Pressure conversion: 1V=0MPa, 5V=1MPa
@@ -75,8 +76,13 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Normal toggle behavior
-        stateManager.toggleState();
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
+        if (adc_available) {
+          stateManager.toggleState();
+        } else {
+          Serial.println("Recording unavailable: ADS1015 initialization failed");
+        }
+        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                            sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     } else {
@@ -134,7 +140,8 @@ void handleButtonInput() {
         displayManager.drawFileList(files, fileSizes);
       } else {
         // Exited file list mode - display will be restored by StateManager
-        displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
+        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                            sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
     }
@@ -145,7 +152,8 @@ void handleButtonInput() {
     if (stateManager.getCurrentState() == FILE_LIST) {
       // Return to STANDBY (waveform screen)
       stateManager.transitionToStandby();
-      displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
+      displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                          sdManager.hasWriteError(),
                                           wifiManager.isConnected(), mqttManager.isConnected());
     }
   }
@@ -201,9 +209,13 @@ void setup() {
   M5.begin();
   
   // Initialize sensor
-  ads.begin();
-  ads.setDataRate(RATE_ADS1015_3300SPS);
-  ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
+  adc_available = ads.begin();
+  if (adc_available) {
+    ads.setDataRate(RATE_ADS1015_3300SPS);
+    ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
+  } else {
+    Serial.println("ADS1015 initialization failed; sensor sampling disabled");
+  }
 
   // Initialize managers
   displayManager.init();
@@ -219,7 +231,8 @@ void setup() {
   stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
-  displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
+  displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                      sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 
   sample_queue = xQueueCreate(sample_queue_size, sizeof(PressureSample));
@@ -228,7 +241,9 @@ void setup() {
     return;
   }
 
-  xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1);
+  if (adc_available) {
+    xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1);
+  }
   // PubSubClient may busy-wait while connecting. Keep this task at idle priority
   // so the Core 0 idle task can continue resetting the task watchdog.
   xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
@@ -246,7 +261,8 @@ void loop() {
   static unsigned long last_status_update = 0;
   if (now - last_status_update >= 500) {
     last_status_update = now;
-    displayManager.drawConnectionStatus(sdManager.isAvailable(), sdManager.isRecording(), sdManager.hasWriteError(),
+    displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                        sdManager.hasWriteError(),
                                         wifiManager.isConnected(), mqttManager.isConnected());
   }
   
@@ -257,7 +273,6 @@ void loop() {
     stateManager.processSensorData(sample.p0, sample.p1, sample.timestamp);
     processed_samples++;
   }
-
   static unsigned long last_drop_report = 0;
   static unsigned long reported_drop_count = 0;
   if (now - last_drop_report >= 5000 && dropped_sample_count != reported_drop_count) {
