@@ -3,7 +3,7 @@
 `bash scripts/check.sh` を各コミット前に実行する。C++コンパイラ、PythonとPlatformIO、初期化済みADS1X15サブモジュールが必要。オンラインCIは使用しない。
 
 - `bash scripts/test.sh`: 実際の管理クラスをホスト上で実行する。SD・時計等の境界だけをfakeへ置き換え、失敗を注入する。AddressSanitizer / UndefinedBehaviorSanitizerを有効化する。
-- `bash scripts/check.sh`: 上記テストと差分検査後、ESP32用の`validation`環境をビルドする。`PIO`環境変数でPlatformIO実行ファイルを指定可能。
+- `bash scripts/check.sh`: 上記テストと差分検査後、ESP32用の`validation`と`offline`環境をビルドする。`PIO`環境変数でPlatformIO実行ファイルを指定可能。
 - `validation`は公開のダミー設定をプリプロセッサで選択する。`secure/`の実設定・証明書を読み込まず、変更もしない。検証バイナリは実機へ書き込まない。
 - `m5stack`は既存の実機用設定。夜間作業では使用しない。
 
@@ -90,3 +90,9 @@ M5StackライブラリのSD初期化はGPIO4を指定するが、選択中のArd
 新しい未同期名は`pressure_log_boot_<起動グループ番号>_<64bit起動後ms>.csv`。そのSDに残っている起動グループの最大値＋1を最初の未同期記録時に決め、同じ起動中は再マウントでも維持する。旧ログの起動日は復元できず、NTP名と未同期名の間の絶対的な新旧は主張しない。全ログを消した場合、次の起動で番号は再利用され得る。外部機器でカード内容を変更した場合は再マウントまたは再起動する。
 
 503件の混在ログで数値順を確認し、10回の一覧・全サイズ参照で追加openが0回であること、起動／再マウント識別、削除失敗時のキャッシュ保持を検証する。
+
+## R2-C02: オフライン構成
+
+`pio run -e offline`は`PRESSURE_OFFLINE`を指定する。ネットワーク設定／証明書をincludeせず、Wi-Fi／TLS／MQTTのインスタンスと通信タスクを生成しない。NetworkServiceは待機も外部通信もしない実装へ切り替わる。SDは時刻源なしで記録し、画面にOFFLINEを表示する。通常の`m5stack`構成は従来どおりローカル設定を利用する。
+
+ローカルゲートはホスト試験もonline／offlineの両構成で実行する。offlineではWi-Fi開始・NTP要求・MQTT接続が全て0回で、SD記録開始から停止まで行えることを検証する。ESP32ビルドも公開ダミー設定のvalidationと、ダミー設定すら使わないofflineを対象にする。実機への書込みは行わない。

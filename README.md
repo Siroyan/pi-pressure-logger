@@ -46,6 +46,16 @@ cd pi-pressure-logger
 git submodule update --init --recursive
 ```
 
+### SD専用で使う場合
+
+Wi-Fi・AWS・NTPを使わず、認証情報を用意しない場合は`offline`環境を選びます。画面には`OFFLINE`と表示され、通信タスクも作りません。SD記録・停止・一覧操作は使用できます。ネットワークを利用する場合のみ次の秘密情報設定へ進んでください。
+
+```bash
+pio run -e offline
+pio run -e offline --target upload
+pio device monitor
+```
+
 ### 2. 秘密情報ファイルを作成
 
 `secure/` 以下の実ファイルは `.gitignore` で除外されています。テンプレートをコピーして、実際の値を設定してください。

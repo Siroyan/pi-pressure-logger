@@ -1,17 +1,9 @@
 #include <M5Stack.h>
 #include "AcquisitionService.h"
-#ifdef PRESSURE_TEST_CONFIG
-#include "../test/support/FirmwareConfig.h"
-#else
-#include "../secure/aws_certificates.h"
-#include "../secure/config.h"
-#endif
 #include "StateManager.h"
-#include "WiFiManager.h"
-#include "MQTTManager.h"
+#include "NetworkService.h"
 #include "SDManager.h"
 #include "DisplayManager.h"
-#include "TimeManager.h"
 #include "StorageService.h"
 #include "RuntimeStartup.h"
 #include <freertos/queue.h>
@@ -44,10 +36,7 @@ unsigned long button_press_time = 0;
 const int min_press_duration = 50; // Minimum press duration in ms to be considered valid
 
 // Manager instances
-WiFiClientSecure wifiClientSecure;
-WiFiManager wifiManager(ssid, password);
-MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name,
-                        aws_iot_topic, aws_root_ca, device_cert, device_key);
+NetworkService networkService(recordingQueue);
 SDManager sdManager;
 StorageService storageService(sdManager, recordingQueue);
 std::vector<String> listedFiles;
@@ -56,7 +45,6 @@ bool fileRequestPending = false;
 bool screenDirty = true;
 bool fileOperationSuccess = true;
 DisplayManager displayManager;
-TimeManager timeManager;
 StateManager stateManager;
 RuntimeStartup runtime;
 FileAction fileAction;
@@ -119,18 +107,6 @@ void storageTask(void*) {
   }
 }
 
-void handleNetworkMaintenance() {
-  // Check WiFi connection and maintain MQTT
-  wifiManager.checkConnection();
-  timeManager.poll();
-  RecordEvent event;
-  if (recordingQueue.receiveNetwork(event)) {
-    if (event.kind == RecordKind::Sample && event.session) {
-      mqttManager.offer({event.sample.p0,event.sample.p1,event.sample.timestamp,event.session,event.sequence});
-    } else mqttManager.clearPending();
-  }
-  mqttManager.loop(wifiManager.isConnected() && timeManager.isTimeSynced());
-}
 
 void samplingTask(void* parameter) {
   TickType_t last_wake_time = xTaskGetTickCount();
@@ -147,7 +123,7 @@ void samplingTask(void* parameter) {
 
 void networkTask(void* parameter) {
   while (true) {
-    handleNetworkMaintenance();
+    networkService.step();
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -160,23 +136,18 @@ void setup() {
   // Initialize managers
   displayManager.init();
   sdManager.init();
-  wifiManager.init();
-  
-  // Initialize time synchronization after WiFi
-  timeManager.init();
-  
-  mqttManager.init();
-  
+  networkService.init();
+
   // Connect state manager to other managers
-  stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
+  stateManager.setManagers(&sdManager, nullptr, &displayManager, networkService.timeSource());
   
   // Draw initial status
   displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                       sdManager.hasWriteError(),
-                                      wifiManager.isConnected(), mqttManager.isConnected());
+                                      networkService.wifiConnected(), networkService.mqttConnected(), networkService.enabled());
 
   stateManager.setRecordingQueue(&recordingQueue);
-  runtime = startStorageRuntime(true,mqttManager.isReady(), [] {
+  runtime = startStorageRuntime(true,networkService.ready(), [] {
     return recordingQueue.init(sample_queue_size);
   }, [] {
     return storageService.init();
@@ -185,8 +156,10 @@ void setup() {
   }, [] {
     return xTaskCreatePinnedToCore(samplingTask,"pressure-sampling",4096,nullptr,3,nullptr,1)==pdPASS;
   }, [] {
+    if (!networkService.enabled()) return true;
     return xTaskCreatePinnedToCore(networkTask,"network-maintenance",8192,nullptr,tskIDLE_PRIORITY,nullptr,0)==pdPASS;
   });
+  runtime.network = networkService.enabled() && runtime.network;
   stateManager.setRecordingReady(runtime.acquisition);
   if (runtime.error) Serial.println(runtime.error);
 
@@ -234,7 +207,7 @@ void loop() {
         if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
         displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                             sdManager.hasWriteError(),
-                                            wifiManager.isConnected(), mqttManager.isConnected());
+                                            networkService.wifiConnected(), networkService.mqttConnected(), networkService.enabled());
       }
     }
     PressureSample sample;

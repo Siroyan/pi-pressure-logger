@@ -4,4 +4,4 @@ cd "$(dirname "$0")/.."
 bash scripts/test.sh
 git diff --check
 pio_bin="${PIO:-$HOME/.platformio/penv/bin/pio}"
-"$pio_bin" run -e validation
+"$pio_bin" run -e validation -e offline
