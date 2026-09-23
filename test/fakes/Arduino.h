@@ -35,6 +35,9 @@ public:
   friend bool operator<(const String& a,const String& b) { return a.s<b.s; }
 };
 inline uint32_t fake_millis = 0;
+inline uint32_t fake_micros = 0;
+inline unsigned long micros() { return fake_micros; }
+inline void delayMicroseconds(unsigned long us) { fake_micros += us; }
 inline unsigned long millis() { return fake_millis; }
 inline void delay(unsigned long ms) { fake_millis += ms; }
 inline bool fake_time_valid = false;

@@ -1,5 +1,5 @@
 #include <M5Stack.h>
-#include <Adafruit_ADS1X15.h>
+#include "AcquisitionService.h"
 #ifdef PRESSURE_TEST_CONFIG
 #include "../test/support/FirmwareConfig.h"
 #else
@@ -17,8 +17,6 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
-Adafruit_ADS1015 ads;
-bool adc_available = false;
 // Voltage divider: 5V -> 2.5V (R1=47k, R2=47k)
 // ADS1015 with GAIN_TWOTHIRDS: 0-6.144V range, LSB = 3mV
 // Pressure conversion: 1V=0MPa, 5V=1MPa
@@ -38,6 +36,7 @@ const int interval_ms = 1000 / sampling_rate;
 const int sample_queue_size = 512;
 const int max_samples_per_loop = 4;
 RecordingQueue recordingQueue;
+AcquisitionService acquisitionService(recordingQueue);
 
 
 // Button debounce variables
@@ -87,7 +86,7 @@ void handleButtonInput() {
           displayManager.navigateFileList(1, listedFiles.size());
           screenDirty = true;
         }
-      } else if (adc_available || stateManager.getCurrentState() == RECORDING) {
+      } else if (acquisitionService.isAvailable() || stateManager.getCurrentState() == RECORDING) {
         stateManager.toggleState();
         screenDirty = true;
       }
@@ -140,11 +139,9 @@ void samplingTask(void* parameter) {
   while (true) {
     vTaskDelayUntil(&last_wake_time, sample_period);
 
-    float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f;
-    float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
-
-    recordingQueue.submit((v0_original - 1.0f) / 4.0f,
-                          (v1_original - 1.0f) / 4.0f);
+    acquisitionService.step();
+    // Never issue a burst of catch-up conversions after a timeout or preemption.
+    if (xTaskGetTickCount() - last_wake_time >= sample_period) last_wake_time = xTaskGetTickCount();
   }
 }
 
@@ -158,14 +155,7 @@ void networkTask(void* parameter) {
 void setup() {
   M5.begin();
   
-  // Initialize sensor
-  adc_available = ads.begin();
-  if (adc_available) {
-    ads.setDataRate(RATE_ADS1015_3300SPS);
-    ads.setGain(GAIN_TWOTHIRDS); // 0-6.144V range for 0-2.5V input
-  } else {
-    Serial.println("ADS1015 initialization failed; sensor sampling disabled");
-  }
+  acquisitionService.init();
 
   // Initialize managers
   displayManager.init();
@@ -181,12 +171,12 @@ void setup() {
   stateManager.setManagers(&sdManager, &mqttManager, &displayManager, &timeManager);
   
   // Draw initial status
-  displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+  displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                       sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 
   stateManager.setRecordingQueue(&recordingQueue);
-  runtime = startStorageRuntime(adc_available,mqttManager.isReady(), [] {
+  runtime = startStorageRuntime(true,mqttManager.isReady(), [] {
     return recordingQueue.init(sample_queue_size);
   }, [] {
     return storageService.init();
@@ -206,6 +196,10 @@ void loop() {
   M5.update();
   unsigned long now = millis();
   
+  if (!acquisitionService.isAvailable() && stateManager.getCurrentState() == RECORDING) {
+    stateManager.transitionToStandby();
+    screenDirty = true;
+  }
   // Handle user input
   handleButtonInput();
   
@@ -238,7 +232,7 @@ void loop() {
         last_status_update = now;
         M5.Lcd.fillRect(30,200,280,9,BLACK);
         if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
-        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+        displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                             sdManager.hasWriteError(),
                                             wifiManager.isConnected(), mqttManager.isConnected());
       }
