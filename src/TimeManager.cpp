@@ -1,4 +1,5 @@
 #include "TimeManager.h"
+#include "RtcClock.h"
 
 TimeManager::TimeManager(const char* server, long gmt_offset, int daylight_offset)
   : time_synced(false), ntp_server(server), gmt_offset_sec(gmt_offset), daylight_offset_sec(daylight_offset) {}
@@ -23,14 +24,14 @@ void TimeManager::poll() {
 
 bool TimeManager::isTimeSynced() {
   struct tm info;
-  bool valid = getLocalTime(&info, 0) && info.tm_year > 120;
+  bool valid = readRtcTime(info) && info.tm_year > 120;
   time_synced = valid;
   return valid;
 }
 
 String TimeManager::getCurrentTimeString() {
   struct tm info;
-  if (!getLocalTime(&info, 0) || info.tm_year <= 120) return "Time not available";
+  if (!readRtcTime(info) || info.tm_year <= 120) return "Time not available";
   char buffer[64];
   strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &info);
   return String(buffer);
@@ -38,7 +39,7 @@ String TimeManager::getCurrentTimeString() {
 
 String TimeManager::getFormattedTimeString() {
   struct tm info;
-  if (!getLocalTime(&info, 0) || info.tm_year <= 120) return "";
+  if (!readRtcTime(info) || info.tm_year <= 120) return "";
   char buffer[32];
   strftime(buffer, sizeof(buffer), "%Y-%m-%d-%H-%M-%S", &info);
   return String(buffer);
