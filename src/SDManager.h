@@ -21,6 +21,12 @@ private:
   size_t batch_size = 0;
   uint32_t last_flush = 0;
   TimeManager* timeManager;
+  struct LogEntry { String name; long size; };
+  std::vector<LogEntry> file_cache;
+  bool cache_valid = false;
+  uint64_t boot_number = 0;
+  bool refreshFileCache();
+  String uptimeFilename();
   
 public:
   SDManager();

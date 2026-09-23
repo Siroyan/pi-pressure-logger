@@ -4,13 +4,13 @@
 
 TEST(existing_log_is_preserved_on_same_tick_restart) {
   disk={}; fake_millis=42;
-  disk.files["/pressure_log_42.csv"]="existing data";
+  disk.files["/pressure_log_boot_0000000001_00000000000000000042.csv"]="existing data";
   SDManager sd;
   CHECK(sd.init()); CHECK(sd.startRecording(fake_millis)); sd.stopRecording();
   CHECK(sd.startRecording(fake_millis));
-  CHECK(disk.files.at("/pressure_log_42.csv")=="existing data");
-  CHECK(disk.files.count("/pressure_log_42_0001.csv"));
-  CHECK(disk.files.count("/pressure_log_42_0002.csv"));
+  CHECK(disk.files.at("/pressure_log_boot_0000000001_00000000000000000042.csv")=="existing data");
+  CHECK(disk.files.count("/pressure_log_boot_0000000002_00000000000000000042.csv"));
+  CHECK(disk.files.count("/pressure_log_boot_0000000002_00000000000000000042_0001.csv"));
 }
 
 TEST(start_open_failure_does_not_claim_sd_recording) {
@@ -59,8 +59,8 @@ TEST(write_error_requires_new_session_and_preserves_failed_file) {
   auto failed=disk.files.begin()->second;
   disk.capacity=1000;
   CHECK(sd.startRecording(fake_millis)); CHECK(!sd.hasWriteError());
-  CHECK(disk.files.at("/pressure_log_100.csv")==failed);
-  CHECK(disk.files.count("/pressure_log_100_0001.csv"));
+  CHECK(disk.files.at("/pressure_log_boot_0000000001_00000000000000000100.csv")==failed);
+  CHECK(disk.files.count("/pressure_log_boot_0000000001_00000000000000000100_0001.csv"));
   CHECK(sd.logData({3,4,fake_millis}));
 }
 

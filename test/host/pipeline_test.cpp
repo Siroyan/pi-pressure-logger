@@ -33,13 +33,13 @@ TEST(stalled_storage_keeps_buttons_display_queue_and_network_independent) {
 TEST(recording_holds_one_file_and_flushes_at_deadline_and_stop) {
   disk={}; fake_millis=100;
   SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(100));
-  CHECK(disk.opens==1); CHECK(disk.closes==0);
+  CHECK(disk.opens==2); CHECK(disk.closes==1);
   for (unsigned i=0;i<100;++i) CHECK(sd.logData({0.1f,0.2f,100+i*10}));
-  CHECK(disk.opens==1); CHECK(disk.closes==0);
+  CHECK(disk.opens==2); CHECK(disk.closes==1);
   fake_millis=1100; sd.poll();
   CHECK(disk.files.begin()->second.find("990,0.1000,0.2000")!=std::string::npos);
   CHECK(sd.logData({0.3f,0.4f,1100})); sd.stopRecording();
-  CHECK(disk.closes==1);
+  CHECK(disk.closes==2);
   CHECK(disk.files.begin()->second.find("1000,0.3000,0.4000")!=std::string::npos);
 }
 

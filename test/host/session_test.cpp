@@ -28,8 +28,8 @@ TEST(delayed_start_stop_restart_preserves_session_boundaries) {
   for (const auto& event:queue.events) published+=writer.process(event);
   CHECK(published==3);
   CHECK(disk.files.size()==2);
-  const auto& first=disk.files.at("/pressure_log_100.csv");
-  const auto& second=disk.files.at("/pressure_log_100_0001.csv");
+  const auto& first=disk.files.at("/pressure_log_boot_0000000001_00000000000000000020.csv");
+  const auto& second=disk.files.at("/pressure_log_boot_0000000001_00000000000000000030.csv");
   CHECK(first.find("1,1.0000,2.0000\r\n2,3.0000,4.0000\r\n")!=first.npos);
   CHECK(second.find("1,5.0000,6.0000\r\n")!=second.npos);
   CHECK(first.find("9.0000")==first.npos); CHECK(second.find("8.0000")==second.npos);
