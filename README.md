@@ -119,7 +119,7 @@ pio device monitor
 センサー値は次の条件で処理されます。
 
 - サンプリング目標: 100 Hz（10 ms周期。RTOS・I/O負荷による遅延や欠測を除く）
-- 波形バッファ: 20 秒分（2,000 サンプル）
+- 波形の時間窓: 20秒。2px幅の138列ごとに最小値・最大値を保持
 - 波形の最新位置を示す空白: 最古側の1秒分
 - 圧力単位: MPa
 - 波形表示範囲: 0〜0.5 MPa
@@ -135,7 +135,7 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 10,0.6235,-0.0100
 ```
 
-`Timestamp(ms)` は記録開始からの経過時間です。NTP 同期済みの場合、ファイルの先頭には記録開始時刻を示すコメント行も追加されます。
+`Timestamp(ms)`はサンプル取得時刻と記録開始境界との差です。保存処理が遅れても取得時刻を保持します。NTP同期済みの場合はファイル作成時の壁時計時刻をコメントに記録します（保存待ちがある場合、記録開始境界とは異なります）。末尾コメントにはセッションID・保存キューの欠落数・最大使用数を記録します。
 
 ## AWS IoT MQTT
 
@@ -158,7 +158,12 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 
 ```text
 src/
-├── main.cpp              # 初期化、センサー読み取り、ボタン処理
+├── main.cpp              # 所有アプリのsetup/tick呼出し
+├── LoggerApplication.*   # タスクと管理クラスの所有、ボタン処理
+├── AcquisitionService.h  # 有効サンプルのみを配信、ADC異常からの復旧
+├── RecordingQueue.h      # 保存FIFO・表示FIFO・通信メールボックス
+├── StorageService.h      # SD処理と共有SPIの管理
+├── NetworkService.*      # Wi-Fi/NTP/MQTTの所有、オフライン切替
 ├── StateManager.*        # STANDBY / RECORDING / FILE_LIST の状態管理
 ├── DisplayManager.*      # 波形、状態、ファイル一覧の表示
 ├── SDManager.*           # CSV 作成、記録、一覧、削除

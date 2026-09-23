@@ -8,7 +8,7 @@ for mode in online offline; do
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter \
   "${mode_flags[@]}" -g -fsanitize=address,undefined -fno-omit-frame-pointer \
   -Itest/fakes -Isrc -Itest/host \
-  test/host/*.cpp src/SDManager.cpp src/TimeManager.cpp src/WiFiManager.cpp src/DisplayManager.cpp src/StateManager.cpp src/MQTTManager.cpp src/NetworkService.cpp \
+  test/host/*.cpp src/SDManager.cpp src/TimeManager.cpp src/WiFiManager.cpp src/DisplayManager.cpp src/StateManager.cpp src/MQTTManager.cpp src/NetworkService.cpp src/LoggerApplication.cpp \
   -o ".test-build/host-tests-$mode"
 ".test-build/host-tests-$mode"
 done

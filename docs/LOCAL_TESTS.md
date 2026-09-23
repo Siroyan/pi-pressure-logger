@@ -96,3 +96,11 @@ M5StackライブラリのSD初期化はGPIO4を指定するが、選択中のArd
 `pio run -e offline`は`PRESSURE_OFFLINE`を指定する。ネットワーク設定／証明書をincludeせず、Wi-Fi／TLS／MQTTのインスタンスと通信タスクを生成しない。NetworkServiceは待機も外部通信もしない実装へ切り替わる。SDは時刻源なしで記録し、画面にOFFLINEを表示する。通常の`m5stack`構成は従来どおりローカル設定を利用する。
 
 ローカルゲートはホスト試験もonline／offlineの両構成で実行する。offlineではWi-Fi開始・NTP要求・MQTT接続が全て0回で、SD記録開始から停止まで行えることを検証する。ESP32ビルドも公開ダミー設定のvalidationと、ダミー設定すら使わないofflineを対象にする。実機への書込みは行わない。
+
+## R2-C03: 所有関係と統合試験
+
+LoggerApplicationが管理クラスとキューの寿命を所有し、FreeRTOSタスクには所有者ポインタを渡す。画面・ボタン・一覧選択・StateManagerはUIだけが操作する。センサーはAcquisitionService、SDと一覧キャッシュはStorageService、Wi-Fi／NTP／TLSはNetworkServiceの担当タスクだけが操作する。不要になった2,000件×2のグローバル配列、表示用の未使用引数、stateChangeTime、ファイル名の未使用整形関数、重複した起動処理を削除した。
+
+共有サンプル／境界はキュー、MQTTの入力と状態は短いクリティカルセクション、可用性と欠測数はatomic、SD一覧結果はmutex＋swapで受け渡す。SD／LCDの共有SPIは保存側のmutexと描画側のtry-lockで直列化し、ボタン処理では待たない。時刻整形は待機なしのRTC読み取りで、不要な時刻同期フラグは持たない。
+
+同じLoggerApplicationのsetup/tickと各ワーカーのstepをホストで実行する統合試験を追加した。実際のボタン列による開始・停止、削除確認・取消・実行、SD書込み中の停止受理、タスク生成失敗時のREC抑止と画面操作を確認する。待機中の削除確認画面を毎周回消去する処理も除き、画面や一覧が不要に更新されないことを検証する。

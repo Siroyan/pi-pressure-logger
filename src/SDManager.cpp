@@ -78,7 +78,7 @@ String SDManager::createLogFile() {
     
     // Add a comment with session start time if NTP is available
     if (complete && timeManager && timeManager->isTimeSynced()) {
-      complete = writeLine(file, "# Session started: " + timeManager->getCurrentTimeString());
+      complete = writeLine(file, "# File created (wall clock): " + timeManager->getCurrentTimeString());
     }
     file.flush();
     complete = complete && file.getWriteError() == 0;
@@ -283,28 +283,4 @@ bool SDManager::deleteFile(const String& filename) {
 long SDManager::getFileSize(const String& filename) {
   if (refreshFileCache()) for(const auto& entry:file_cache) if(entry.name==filename) return entry.size;
   return -1;
-}
-
-String SDManager::getFileTimestamp(const String& filename) {
-  // Extract timestamp from filename
-  // Format: pressure_log_YYYY-MM-DD-hh-mm-ss.csv or pressure_log_millis.csv
-  
-  String name = filename;
-  name.replace("pressure_log_", "");
-  name.replace(".csv", "");
-  
-  // Check if it's a timestamp format (contains hyphens)
-  if (name.indexOf('-') >= 0) {
-    // Convert YYYY-MM-DD-hh-mm-ss to readable format
-    name.replace('-', '/');
-    int lastSlash = name.lastIndexOf('/');
-    if (lastSlash >= 0) {
-      name = name.substring(0, lastSlash) + " " + name.substring(lastSlash + 1);
-      name.replace('/', ':');
-    }
-    return name;
-  } else {
-    // Millis-based filename
-    return "Legacy (" + name + ")";
-  }
 }

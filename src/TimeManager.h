@@ -3,11 +3,9 @@
 
 #include <WiFi.h>
 #include <time.h>
-#include <atomic>
 
 class TimeManager {
 private:
-  std::atomic<bool> time_synced;
   bool requested = false, was_connected = false;
   uint32_t last_attempt = 0;
   const char* ntp_server;
