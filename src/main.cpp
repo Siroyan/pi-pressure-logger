@@ -20,6 +20,7 @@ bool adc_available = false;
 const int duration_sec = 20;
 const int sampling_rate = 100;
 const int buffer_size = duration_sec * sampling_rate;
+const int graph_gap_samples = sampling_rate;
 
 float ch0_buffer[buffer_size] = {0};
 float ch1_buffer[buffer_size] = {0};
