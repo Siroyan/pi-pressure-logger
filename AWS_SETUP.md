@@ -1,6 +1,6 @@
 # AWS IoT Core セットアップガイド
 
-> 最終確認日: 2026-09-22
+> 最終確認日: 2026-09-24
 >
 > AWS Management Consoleのメニュー名・画面構成・ボタン名は変更されることがあります。本書は上記日付時点のAWS公式ドキュメントを基準にしています。画面が一致しない場合は、本文中の公式リンクにある最新手順を優先してください。
 
@@ -14,7 +14,7 @@
 | MQTTクライアントID | `PressureLogger`（`thing_name`の値） |
 | 認証 | X.509デバイス証明書 |
 | プロトコル／ポート | MQTT over TLS／`8883` |
-| Publish先 | `pressure_logger/ch0`、`pressure_logger/ch1` |
+| Publish先 | `pressure_logger/data`（`aws_iot_topic`の値） |
 | 送信間隔 | 記録中に約500 ms間隔 |
 | Subscribe | デバイス側では使用しない |
 
@@ -63,8 +63,7 @@ AWS IoTコンソールで、現在の公式手順では **Security → Policies 
       "Effect": "Allow",
       "Action": "iot:Publish",
       "Resource": [
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch0",
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch1"
+        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/data"
       ]
     }
   ]
@@ -130,7 +129,7 @@ aws iot describe-endpoint \
 a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com
 ```
 
-AWS IoTコンソールでは、設定画面の **Device data endpoint** から確認できます。導線が変わった場合は、[AWS公式のデバイス接続とエンドポイントの説明](https://docs.aws.amazon.com/iot/latest/developerguide/iot-connect-devices.html)を参照してください。
+AWS IoTコンソールでは、現在の[公式エンドポイント確認手順](https://docs.aws.amazon.com/iot/latest/developerguide/iot-quick-start-test-connection.html)は **Connect → Domain Configurations** で **Domain name** を確認する導線です。公式資料にはSettings経由の記述も残っています。画面名だけで判断せず、同じリージョンの`describe-endpoint --endpoint-type iot:Data-ATS`の結果を基準にしてください。
 
 設定には`https://`や`mqtts://`を付けず、ホスト名だけを使用します。
 
@@ -153,9 +152,10 @@ const char* aws_iot_endpoint =
     "a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com";
 const int aws_iot_port = 8883;
 const char* thing_name = "PressureLogger";
+const char* aws_iot_topic = "pressure_logger/data";
 ```
 
-`secure/config.h.example`の`aws_iot_topic`は現在の実装では参照されません。実際の送信先は`src/MQTTManager.cpp`に定義された2トピックです。
+`aws_iot_topic`が実際の送信先です。変更する場合は、上のポリシーの`topic/pressure_logger/data`と、MQTTテストクライアントの購読先も同じ値へ合わせてください。
 
 ### `secure/aws_certificates.h`
 
@@ -189,13 +189,11 @@ pio device monitor
 シリアルモニターは115200 baudです。正常に接続すると、次のようなメッセージが表示されます。
 
 ```text
-WiFi connected!
-Time synchronized successfully
 AWS IoT certificates loaded
 connected to AWS IoT Core
 ```
 
-LCDの`AWS`表示も緑になります。
+LCDの`WiFi`と`AWS`表示も緑になります。NTPは非同期に同期し、時計の確定後にTLS接続を開始します。NTP不達でも起動処理は待機しません。
 
 ## 7. MQTTメッセージを確認する
 
@@ -203,16 +201,13 @@ LCDの`AWS`表示も緑になります。
 
 1. Thingと同じリージョンを選択していることを確認する。
 2. **Subscribe to a topic**を開く。
-3. Topic filterに`pressure_logger/#`を入力する。
+3. Topic filterに`pressure_logger/data`を入力する。
 4. **Subscribe**を選択する。
 5. M5StackのAボタンを押して記録状態にする。
 
 この実装は記録状態のときだけMQTT Publishを行います。待機状態ではAWSへ接続済みでも送信しません。
 
-正常なら、約500 msごとに次の2トピックへ同じJSONが届きます。
-
-- `pressure_logger/ch0`
-- `pressure_logger/ch1`
+正常なら、約500 msごとに`pressure_logger/data`へ両チャンネルを含むJSONが1件届きます。`ch0`と`ch1`の単位はMPaで、波形表示の0〜0.5 MPaという範囲には制限しません。
 
 ```json
 {
@@ -243,7 +238,7 @@ A-03はセンサー取得を通信保守タスクから分離しますが、AWS�
 ### Wi-Fiへ接続できない
 
 - `ssid`と`password`を確認する。
-- シリアルの`WiFi connection failed!`を確認する。
+- LCDの`WiFi!`表示を確認する。再接続は非同期に5秒間隔で要求する。
 
 ### AWS表示が赤い、またはMQTT接続に失敗する
 
@@ -257,8 +252,8 @@ A-03はセンサー取得を通信保守タスクから分離しますが、AWS�
 ### 接続済みだがメッセージが届かない
 
 - M5Stackが記録状態か確認する。
-- MQTTテストクライアントのリージョンと`pressure_logger/#`を確認する。
-- ポリシーが両トピックへの`iot:Publish`を許可していることを確認する。
+- MQTTテストクライアントのリージョンと`pressure_logger/data`を確認する。
+- ポリシーが設定した`pressure_logger/data`への`iot:Publish`を許可していることを確認する。
 - シリアルの`Data published to AWS IoT`または`Failed to publish data`を確認する。
 
 ### `Not authorized`になる
