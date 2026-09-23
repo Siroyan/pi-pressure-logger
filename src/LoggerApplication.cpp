@@ -85,7 +85,7 @@ void LoggerApplication::networkTask(void* parameter) {
 
 void LoggerApplication::setup() {
   M5.begin(true,false); // SDManager owns the SD mount and recovery settings.
-  
+
   acquisitionService.init();
 
   // Initialize managers
@@ -95,7 +95,7 @@ void LoggerApplication::setup() {
 
   // Connect state manager to other managers
   sdManager.setTimeManager(networkService.timeSource());
-  
+
   // Draw initial status
   displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                       sdManager.hasWriteError(),
@@ -122,14 +122,14 @@ void LoggerApplication::setup() {
 void LoggerApplication::tick() {
   M5.update();
   uint32_t now = millis();
-  
+
   if (!acquisitionService.isAvailable() && stateManager.getCurrentState() == RECORDING) {
     stateManager.transitionToStandby();
     screenDirty = true;
   }
   // Handle user input
   handleButtonInput();
-  
+
   if (storageService.takeResult(listedFiles, listedSizes, fileOperationSuccess)) {
     fileRequestPending = false;
     if (fileAction.status()==FileAction::Status::Busy) fileAction.complete(fileOperationSuccess);
