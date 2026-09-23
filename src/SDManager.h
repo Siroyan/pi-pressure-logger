@@ -4,6 +4,7 @@
 #include <SD.h>
 #include <FS.h>
 #include <vector>
+#include "PressureSample.h"
 
 class TimeManager;
 
@@ -11,7 +12,7 @@ class SDManager {
 private:
   bool sd_available;
   String log_filename;
-  unsigned long session_start_time;
+  uint64_t session_start_time;
   bool recording;
   bool write_error;
   TimeManager* timeManager;
@@ -25,9 +26,9 @@ public:
   bool isRecording();
   bool hasWriteError();
   
-  bool startRecording();
+  bool startRecording(uint64_t started_at);
   void stopRecording();
-  bool logData(float p0, float p1);
+  bool logData(const PressureSample& sample);
   
   // File management functions
   std::vector<String> getLogFileList();

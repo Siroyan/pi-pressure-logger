@@ -34,11 +34,6 @@ int buf_index = 0;
 
 const int interval_ms = 1000 / sampling_rate;
 
-struct PressureSample {
-  float p0;
-  float p1;
-  uint64_t timestamp;
-};
 
 const int sample_queue_size = 512;
 const int max_samples_per_loop = 4;
@@ -187,7 +182,7 @@ void samplingTask(void* parameter) {
     PressureSample sample;
     sample.p0 = (v0_original - 1.0f) / 4.0f;
     sample.p1 = (v1_original - 1.0f) / 4.0f;
-    sample.timestamp = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    sample.timestamp = acquisitionMillis();
 
     if (xQueueSend(sample_queue, &sample, 0) != pdTRUE) {
       dropped_sample_count++;

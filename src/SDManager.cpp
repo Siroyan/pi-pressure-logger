@@ -110,7 +110,7 @@ String SDManager::createUniqueFilename(const String& filename) {
   return "";
 }
 
-bool SDManager::startRecording() {
+bool SDManager::startRecording(uint64_t started_at) {
   if (recording) return false;
   recording = false;
   log_filename = "";
@@ -130,7 +130,7 @@ bool SDManager::startRecording() {
   if (log_filename != "") {
     write_error = false;
     recording = true;
-    session_start_time = millis();
+    session_start_time = started_at;
     Serial.println("Recording started");
     return true;
   }
@@ -159,8 +159,9 @@ void SDManager::stopRecording() {
   }
 }
 
-bool SDManager::logData(float p0, float p1) {
+bool SDManager::logData(const PressureSample& sample) {
   if (!sd_available || log_filename == "" || !recording) return false;
+  if (sample.timestamp < session_start_time) return false;
   
   File file = SD.open(log_filename.c_str(), FILE_APPEND);
   if (!file) {
@@ -169,8 +170,8 @@ bool SDManager::logData(float p0, float p1) {
     return false;
   }
 
-  unsigned long timestamp = millis() - session_start_time;
-  String row = String(timestamp) + "," + String(p0, 4) + "," + String(p1, 4);
+  uint64_t timestamp = sample.timestamp - session_start_time;
+  String row = String(timestamp) + "," + String(sample.p0, 4) + "," + String(sample.p1, 4);
   bool complete = writeLine(file, row);
   file.flush();
   complete = complete && file.getWriteError() == 0;

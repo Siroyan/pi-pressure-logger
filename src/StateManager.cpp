@@ -82,7 +82,7 @@ void StateManager::onEnterRecording() {
   ++recordingSession; if (!recordingSession) ++recordingSession;
   sequence = 0;
   if (sdManager) {
-    if (!sdManager->startRecording()) {
+    if (!sdManager->startRecording(acquisitionMillis())) {
       Serial.println("SD recording could not be started; MQTT publishing remains active");
     }
   }
@@ -128,7 +128,7 @@ void StateManager::handleStandbyState() {
 void StateManager::handleRecordingState(float p0, float p1, uint64_t now) {
   // Log data to SD card
   if (sdManager && sdManager->isRecording()) {
-    sdManager->logData(p0, p1);
+    sdManager->logData({p0, p1, now});
   }
   
   // Publish data via MQTT (at 500ms intervals)
