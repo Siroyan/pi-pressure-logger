@@ -4,6 +4,7 @@
 #include <M5Stack.h>
 #include <vector>
 #include "GraphHistory.h"
+#include "FileAction.h"
 
 class DisplayManager {
 private:
@@ -32,6 +33,7 @@ public:
   
   // File list display functions
   void drawFileList(const std::vector<String>& files, const std::vector<long>& fileSizes);
+  void drawFileAction(const FileAction& action);
   void navigateFileList(int direction, int total_files);
   int getSelectedFileIndex() const;
   void resetFileListNavigation();

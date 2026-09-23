@@ -50,3 +50,23 @@ TEST(graph_clips_only_pixels_with_two_pixel_insets_and_width) {
   }
   CHECK(colored==2);
 }
+
+TEST(delete_requires_confirmation_keeps_exact_selection_and_supports_cancel) {
+  FileAction action;
+  CHECK(!action.confirm());
+  CHECK(action.begin("pressure_log_2026-09-24-10-11-12_0001.csv",123));
+  CHECK(action.status()==FileAction::Status::Confirm);
+  CHECK(!action.begin("different.csv",456));
+  CHECK(action.dismiss()); CHECK(!action.confirm());
+  CHECK(action.begin("pressure_log_2026-09-24-10-11-12_0002.csv",456));
+  CHECK(action.confirm()); CHECK(!action.confirm()); CHECK(!action.dismiss());
+  action.complete(false); CHECK(action.status()==FileAction::Status::Failure);
+  CHECK(action.filename()=="pressure_log_2026-09-24-10-11-12_0002.csv");
+  DisplayManager display; display.drawFileAction(action);
+  bool name=false,size=false,failure=false;
+  for(const auto& text:M5.Lcd.text) {
+    name |= text.value==action.filename().c_str(); size |= text.value=="456 bytes";
+    failure |= text.value=="Delete failed";
+  }
+  CHECK(name && size && failure);
+}

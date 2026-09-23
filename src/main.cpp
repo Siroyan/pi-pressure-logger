@@ -57,8 +57,25 @@ SDManager sdManager;
 DisplayManager displayManager;
 TimeManager timeManager;
 StateManager stateManager;
+FileAction fileAction;
 
 void handleButtonInput() {
+  if (stateManager.getCurrentState() == FILE_LIST && fileAction.status() != FileAction::Status::None) {
+    if (M5.BtnC.wasPressed()) {
+      if (fileAction.dismiss()) {
+        auto files=sdManager.getLogFileList(); std::vector<long> sizes;
+        for (const auto& name:files) sizes.push_back(sdManager.getFileSize(name));
+        displayManager.resetFileListNavigation();
+        displayManager.drawFileList(files,sizes);
+      }
+    } else if (M5.BtnB.wasPressed() && fileAction.confirm()) {
+      displayManager.drawFileAction(fileAction);
+      fileAction.complete(sdManager.deleteFile(fileAction.filename()));
+      displayManager.drawFileAction(fileAction);
+    }
+    button_press_time=0;
+    return;
+  }
   // Handle Button A for recording toggle with debounce
   if (M5.BtnA.wasPressed()) {
     button_press_time = millis();
@@ -107,25 +124,8 @@ void handleButtonInput() {
         if (selectedIndex >= 0 && selectedIndex < files.size()) {
           String selectedFile = files[selectedIndex];
           
-          // Confirm and delete
-          if (sdManager.deleteFile(selectedFile)) {
-            Serial.println("File deleted: " + selectedFile);
-            
-            // Refresh file list
-            files = sdManager.getLogFileList();
-            
-            // Adjust selection if needed
-            if (selectedIndex >= files.size() && files.size() > 0) {
-              displayManager.navigateFileList(-1, files.size());
-            }
-            
-            // Update display
-            std::vector<long> fileSizes;
-            for (const String& file : files) {
-              fileSizes.push_back(sdManager.getFileSize(file));
-            }
-            displayManager.drawFileList(files, fileSizes);
-          }
+          fileAction.begin(selectedFile,sdManager.getFileSize(selectedFile));
+          displayManager.drawFileAction(fileAction);
         }
       }
     } else {
@@ -256,7 +256,7 @@ void loop() {
   
   // Update connection status display periodically
   static unsigned long last_status_update = 0;
-  if (now - last_status_update >= 500) {
+  if (stateManager.getCurrentState() != FILE_LIST && now - last_status_update >= 500) {
     last_status_update = now;
     displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                         sdManager.hasWriteError(),

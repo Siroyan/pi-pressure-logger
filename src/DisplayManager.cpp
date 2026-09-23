@@ -199,9 +199,7 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
     
     // File name (truncated if too long)
     String filename = files[i];
-    if (filename.length() > 25) {
-      filename = filename.substring(0, 22) + "...";
-    }
+    if (filename.startsWith("pressure_log_")) filename = filename.substring(13);
     
     M5.Lcd.setCursor(10, y);
     M5.Lcd.print(filename);
@@ -230,6 +228,27 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
     M5.Lcd.setCursor(290, 200);
     M5.Lcd.print(String(selected_file_index + 1) + "/" + String(files.size()));
   }
+}
+
+void DisplayManager::drawFileAction(const FileAction& action) {
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setTextSize(1); M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.setCursor(10,10);
+  const auto status=action.status();
+  M5.Lcd.print(status==FileAction::Status::Confirm ? "Delete this file?" :
+               status==FileAction::Status::Busy ? "Deleting..." :
+               status==FileAction::Status::Success ? "Deleted" : "Delete failed");
+  const String& name=action.filename();
+  for (unsigned offset=0; offset<name.length(); offset+=48) {
+    M5.Lcd.setCursor(10,40+(offset/48)*14);
+    M5.Lcd.print(name.substring(offset, (offset+48<name.length()) ? offset+48 : name.length()));
+  }
+  M5.Lcd.setCursor(10,100);
+  M5.Lcd.print(action.size()>=0 ? String(action.size())+" bytes" : String("Size unavailable"));
+  M5.Lcd.setCursor(10,225); M5.Lcd.setTextColor(YELLOW);
+  M5.Lcd.print(status==FileAction::Status::Confirm ? "B:Confirm delete  C:Cancel" :
+               status==FileAction::Status::Busy ? "Please wait" : "C:Back to files");
+  M5.Lcd.setTextColor(WHITE);
 }
 
 void DisplayManager::navigateFileList(int direction, int total_files) {
