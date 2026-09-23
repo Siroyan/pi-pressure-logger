@@ -167,7 +167,8 @@ void handleButtonInput() {
 void handleNetworkMaintenance() {
   // Check WiFi connection and maintain MQTT
   wifiManager.checkConnection();
-  mqttManager.loop();
+  timeManager.poll();
+  if (wifiManager.isConnected() && timeManager.isTimeSynced()) mqttManager.loop();
 }
 
 void samplingTask(void* parameter) {
@@ -192,20 +193,8 @@ void samplingTask(void* parameter) {
 }
 
 void networkTask(void* parameter) {
-  unsigned long last_time_sync = 0;
-
   while (true) {
     handleNetworkMaintenance();
-
-    unsigned long now = millis();
-    if (wifiManager.isConnected() && (now - last_time_sync >= 30UL * 60UL * 1000UL)) {
-      last_time_sync = now;
-      if (!timeManager.isTimeSynced()) {
-        Serial.println("Re-synchronizing time...");
-        timeManager.syncTime();
-      }
-    }
-
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

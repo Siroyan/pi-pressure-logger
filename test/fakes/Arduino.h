@@ -38,11 +38,12 @@ inline uint32_t fake_millis = 0;
 inline unsigned long millis() { return fake_millis; }
 inline void delay(unsigned long ms) { fake_millis += ms; }
 inline bool fake_time_valid = false;
-inline bool getLocalTime(tm* result, uint32_t = 5000) {
-  if (!fake_time_valid) return false;
+inline bool getLocalTime(tm* result, uint32_t timeout = 5000) {
+  if (!fake_time_valid) { fake_millis += timeout; return false; }
   *result = {}; result->tm_year=126; result->tm_mon=8; result->tm_mday=24; return true;
 }
-inline void configTime(long, int, const char*) {}
+inline unsigned fake_ntp_requests = 0;
+inline void configTime(long, int, const char*) { ++fake_ntp_requests; }
 struct FakeSerial {
   template<class T> void print(const T&) {}
   template<class T> void println(const T&) {}
