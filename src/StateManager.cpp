@@ -30,7 +30,7 @@ void StateManager::transitionToStandby() {
 }
 
 void StateManager::transitionToRecording() {
-  if (currentState != RECORDING) {
+  if (recordingReady && currentState == STANDBY) {
     currentState = RECORDING;
     stateChangeTime = millis();
     onEnterRecording();

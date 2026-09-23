@@ -30,7 +30,9 @@ public:
               const char* name, const char* topic, const char* root_ca,
               const char* cert, const char* key);
   
-  void init();
+  ~MQTTManager();
+  bool isReady() const;
+  bool init();
   void loop();
   bool isConnected();
   void publishData(float p0, float p1);

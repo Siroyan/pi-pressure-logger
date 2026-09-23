@@ -24,6 +24,7 @@ enum SystemState {
 class StateManager {
 private:
   SystemState currentState;
+  bool recordingReady = false;
   unsigned long stateChangeTime;
   SDManager* sdManager;
   MQTTManager* mqttManager;
@@ -33,6 +34,7 @@ public:
   StateManager();
   
   void setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display, TimeManager* time = nullptr);
+  void setRecordingReady(bool ready) { recordingReady = ready; }
   SystemState getCurrentState();
   void transitionToStandby();
   void transitionToRecording();

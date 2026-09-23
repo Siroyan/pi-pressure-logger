@@ -1,4 +1,5 @@
 #include "MQTTManager.h"
+#include <new>
 
 MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
                          const char* name, const char* topic, const char* root_ca,
@@ -7,10 +8,18 @@ MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, in
     aws_iot_endpoint(endpoint), aws_iot_port(port), thing_name(name), aws_iot_topic(topic),
     aws_root_ca(root_ca), device_cert(cert), device_key(key) {
   
-  client = new PubSubClient(*wifiClient);
+  client = new (std::nothrow) PubSubClient(*wifiClient);
 }
 
-void MQTTManager::init() {
+MQTTManager::~MQTTManager() {
+  delete client;
+  if (client_mutex) vSemaphoreDelete(client_mutex);
+}
+
+bool MQTTManager::isReady() const { return client && client_mutex; }
+
+bool MQTTManager::init() {
+  if (!isReady()) return false;
   // Set certificates
   wifiClient->setCACert(aws_root_ca);
   wifiClient->setCertificate(device_cert);
@@ -20,9 +29,11 @@ void MQTTManager::init() {
   client->setSocketTimeout(mqtt_socket_timeout);
   
   Serial.println("AWS IoT certificates loaded");
+  return true;
 }
 
 void MQTTManager::loop() {
+  if (!isReady()) return;
   xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
   if (!client->connected()) {
     reconnect();
@@ -61,6 +72,7 @@ void MQTTManager::reconnect() {
 }
 
 bool MQTTManager::isConnected() {
+  if (!isReady()) return false;
   if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
     return mqtt_connected;
   }
@@ -74,6 +86,7 @@ bool MQTTManager::isConnectedUnsafe() {
 }
 
 void MQTTManager::publishData(float p0, float p1) {
+  if (!isReady()) return;
   if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
     return;
   }
@@ -100,6 +113,7 @@ void MQTTManager::publishData(float p0, float p1) {
 }
 
 bool MQTTManager::canPublish(unsigned long now) {
+  if (!isReady()) return false;
   if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
     return false;
   }
@@ -109,6 +123,7 @@ bool MQTTManager::canPublish(unsigned long now) {
 }
 
 void MQTTManager::updateLastSendTime(unsigned long now) {
+  if (!isReady()) return;
   if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
     return;
   }

@@ -12,6 +12,7 @@
 #include "SDManager.h"
 #include "DisplayManager.h"
 #include "TimeManager.h"
+#include "RuntimeStartup.h"
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <esp_timer.h>
@@ -58,6 +59,7 @@ DisplayManager displayManager;
 TimeManager timeManager;
 StateManager stateManager;
 FileAction fileAction;
+RuntimeStartup runtime;
 
 void handleButtonInput() {
   if (stateManager.getCurrentState() == FILE_LIST && fileAction.status() != FileAction::Status::None) {
@@ -230,19 +232,19 @@ void setup() {
                                       sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 
-  sample_queue = xQueueCreate(sample_queue_size, sizeof(PressureSample));
-  if (!sample_queue) {
-    Serial.println("Failed to create pressure sample queue");
-    return;
-  }
+  runtime = startRuntime(adc_available, mqttManager.isReady(), [] {
+    sample_queue = xQueueCreate(sample_queue_size, sizeof(PressureSample));
+    return sample_queue != nullptr;
+  }, [] {
+    return xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1) == pdPASS;
+  }, [] {
+    // Idle priority keeps the Core 0 watchdog serviced during TLS connection.
+    return xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
+                                   tskIDLE_PRIORITY, nullptr, 0) == pdPASS;
+  });
+  stateManager.setRecordingReady(runtime.acquisition);
+  if (runtime.error) Serial.println(runtime.error);
 
-  if (adc_available) {
-    xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1);
-  }
-  // PubSubClient may busy-wait while connecting. Keep this task at idle priority
-  // so the Core 0 idle task can continue resetting the task watchdog.
-  xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
-                          tskIDLE_PRIORITY, nullptr, 0);
 }
 
 void loop() {
@@ -258,6 +260,8 @@ void loop() {
   static unsigned long last_status_update = 0;
   if (stateManager.getCurrentState() != FILE_LIST && now - last_status_update >= 500) {
     last_status_update = now;
+    M5.Lcd.fillRect(30,200,280,9,BLACK);
+    if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
     displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
                                         sdManager.hasWriteError(),
                                         wifiManager.isConnected(), mqttManager.isConnected());
