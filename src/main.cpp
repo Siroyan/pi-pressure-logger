@@ -1,7 +1,11 @@
 #include <M5Stack.h>
 #include <Adafruit_ADS1X15.h>
+#ifdef PRESSURE_TEST_CONFIG
+#include "../test/support/FirmwareConfig.h"
+#else
 #include "../secure/aws_certificates.h"
 #include "../secure/config.h"
+#endif
 #include "StateManager.h"
 #include "WiFiManager.h"
 #include "MQTTManager.h"

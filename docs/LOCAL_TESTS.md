@@ -1,0 +1,10 @@
+# ローカル検証
+
+`bash scripts/check.sh` を各コミット前に実行する。C++コンパイラ、PythonとPlatformIO、初期化済みADS1X15サブモジュールが必要。オンラインCIは使用しない。
+
+- `bash scripts/test.sh`: 実際の管理クラスをホスト上で実行する。SD・時計等の境界だけをfakeへ置き換え、失敗を注入する。AddressSanitizer / UndefinedBehaviorSanitizerを有効化する。
+- `bash scripts/check.sh`: 上記テストと差分検査後、ESP32用の`validation`環境をビルドする。`PIO`環境変数でPlatformIO実行ファイルを指定可能。
+- `validation`は公開のダミー設定をプリプロセッサで選択する。`secure/`の実設定・証明書を読み込まず、変更もしない。検証バイナリは実機へ書き込まない。
+- `m5stack`は既存の実機用設定。夜間作業では使用しない。
+
+テストはファイル名衝突、保存失敗、圧力値の保持から開始し、各修正と同時に障害・境界・並行処理の回帰ケースを追加する。実機でのSD媒体永続化、ADC配線、AWSへの実接続、スケジューラの遅延分布はホスト試験では証明できないため、別途実機試験手順と未検証事項を記録する。
