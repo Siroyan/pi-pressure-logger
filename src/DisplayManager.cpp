@@ -5,7 +5,6 @@ constexpr unsigned long kSdErrorBlinkHalfPeriodMs = 500;
 constexpr int kGraphTickPixelSpan = 75;
 constexpr int kGraphLinePixelSpan = 74;
 constexpr int kGraphLineWidth = 2;
-constexpr int kGraphXPixelSpan = 277;
 }
 
 DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1.0), 
@@ -13,6 +12,7 @@ DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1
 
 void DisplayManager::init() {
   pressure_text_valid = false;
+  graph.reset();
   M5.Lcd.setRotation(1);
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setTextColor(WHITE);
@@ -54,30 +54,34 @@ void DisplayManager::drawLabels() {
   drawButtonInstructions();
 }
 
-void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_buffer,
-                                  const float* ch1_buffer, int buffer_size, int gap_samples) {
-  // Constrain pressure to 0.0~0.5 MPa
-  p0 = constrain(p0, 0.0, 0.5);
-  p1 = constrain(p1, 0.0, 0.5);
+void DisplayManager::drawSample(float p0, float p1, uint64_t acquired_at) {
+  graph.add(p0,p1,acquired_at);
+  drawGraphChanges();
+}
 
-  int x = 31 + (i * kGraphXPixelSpan / buffer_size);  // x=31-307 (inside border)
-  int gap_index = (i + gap_samples) % buffer_size;
-  int gap_x = 31 + (gap_index * kGraphXPixelSpan / buffer_size);
+void DisplayManager::advanceGraph(uint64_t now) {
+  graph.advance(now);
+  drawGraphChanges();
+}
 
-  // Clear previous waveform (inside only)
-  M5.Lcd.fillRect(x, 22, kGraphLineWidth, 76, BLACK);   // CH0 (y=22-97)
-  M5.Lcd.fillRect(x, 122, kGraphLineWidth, 76, BLACK);  // CH1 (y=122-197)
-
-  // Extend the one-second blank band ahead of the latest sample.
-  M5.Lcd.fillRect(gap_x, 22, kGraphLineWidth, 76, BLACK);
-  M5.Lcd.fillRect(gap_x, 122, kGraphLineWidth, 76, BLACK);
-
-  // Draw pixels (0.5MPa = top, 0.0MPa = bottom, limited to inside area)
-  int y0 = 96 - (p0 / 0.5f) * kGraphLinePixelSpan;   // y=22-96
-  int y1 = 196 - (p1 / 0.5f) * kGraphLinePixelSpan;  // y=122-196
-
-  M5.Lcd.fillRect(x, y0, kGraphLineWidth, kGraphLineWidth, GREEN);
-  M5.Lcd.fillRect(x, y1, kGraphLineWidth, kGraphLineWidth, CYAN);
+void DisplayManager::drawGraphChanges() {
+  for (unsigned i=0; i<GraphHistory::columns; ++i) {
+    const auto& column=graph.column(i);
+    if (!column.dirty) continue;
+    const int x=32 + i*kGraphLineWidth;
+    for (unsigned ch=0; ch<2; ++ch) {
+      const int top=22 + ch*100, bottom=96 + ch*100;
+      M5.Lcd.fillRect(x,top,kGraphLineWidth,76,BLACK);
+      if (column.valid) {
+        float low=constrain(column.low[ch],0.0,0.5);
+        float high=constrain(column.high[ch],0.0,0.5);
+        int yTop=bottom-(high/0.5f)*kGraphLinePixelSpan;
+        int yBottom=bottom-(low/0.5f)*kGraphLinePixelSpan;
+        M5.Lcd.fillRect(x,yTop,kGraphLineWidth,yBottom-yTop+kGraphLineWidth,ch ? CYAN : GREEN);
+      }
+    }
+    graph.painted(i);
+  }
 }
 
 void DisplayManager::drawPressureText(float p0, float p1) {

@@ -14,6 +14,7 @@
 #include "TimeManager.h"
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <esp_timer.h>
 
 Adafruit_ADS1015 ads;
 bool adc_available = false;
@@ -35,7 +36,7 @@ const int interval_ms = 1000 / sampling_rate;
 struct PressureSample {
   float p0;
   float p1;
-  unsigned long timestamp;
+  uint64_t timestamp;
 };
 
 const int sample_queue_size = 512;
@@ -184,7 +185,7 @@ void samplingTask(void* parameter) {
     PressureSample sample;
     sample.p0 = (v0_original - 1.0f) / 4.0f;
     sample.p1 = (v1_original - 1.0f) / 4.0f;
-    sample.timestamp = millis();
+    sample.timestamp = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
 
     if (xQueueSend(sample_queue, &sample, 0) != pdTRUE) {
       dropped_sample_count++;
@@ -250,6 +251,8 @@ void loop() {
   
   // Handle user input
   handleButtonInput();
+  if (stateManager.getCurrentState() != FILE_LIST)
+    displayManager.advanceGraph(static_cast<uint64_t>(esp_timer_get_time()) / 1000);
   
   // Update connection status display periodically
   static unsigned long last_status_update = 0;

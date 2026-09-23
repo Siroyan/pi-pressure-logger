@@ -91,15 +91,14 @@ void StateManager::onEnterFileList() {
   // Display will be updated by the DisplayManager
 }
 
-void StateManager::processSensorData(float p0, float p1, unsigned long now) {
+void StateManager::processSensorData(float p0, float p1, uint64_t now) {
   // Always update display buffers
   ch0_buffer[buf_index] = p0;
   ch1_buffer[buf_index] = p1;
   
   // Only update display if not in file list mode
   if (displayManager && currentState != FILE_LIST) {
-    displayManager->drawOnePoint(buf_index, p0, p1, ch0_buffer, ch1_buffer,
-                                 buffer_size, graph_gap_samples);
+    displayManager->drawSample(p0, p1, now);
     displayManager->drawPressureText(p0, p1);
   }
   
@@ -109,7 +108,7 @@ void StateManager::processSensorData(float p0, float p1, unsigned long now) {
   buf_index = (buf_index + 1) % buffer_size;
 }
 
-void StateManager::handleStateSpecificActions(float p0, float p1, unsigned long now) {
+void StateManager::handleStateSpecificActions(float p0, float p1, uint64_t now) {
   if (currentState == STANDBY) {
     handleStandbyState();
   } else if (currentState == RECORDING) {
@@ -123,7 +122,7 @@ void StateManager::handleStandbyState() {
   // In standby: only display data, no logging or MQTT
 }
 
-void StateManager::handleRecordingState(float p0, float p1, unsigned long now) {
+void StateManager::handleRecordingState(float p0, float p1, uint64_t now) {
   // Log data to SD card
   if (sdManager && sdManager->isRecording()) {
     sdManager->logData(p0, p1);

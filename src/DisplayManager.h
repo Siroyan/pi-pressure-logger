@@ -3,12 +3,15 @@
 
 #include <M5Stack.h>
 #include <vector>
+#include "GraphHistory.h"
 
 class DisplayManager {
 private:
   float last_displayed_v0;
   float last_displayed_v1;
   bool pressure_text_valid = false;
+  GraphHistory graph;
+  void drawGraphChanges();
   
   // File list display variables
   int selected_file_index;
@@ -20,8 +23,8 @@ public:
   
   void init();
   void drawLabels();
-  void drawOnePoint(int i, float p0, float p1, const float* ch0_buffer,
-                    const float* ch1_buffer, int buffer_size, int gap_samples);
+  void drawSample(float p0, float p1, uint64_t acquired_at);
+  void advanceGraph(uint64_t now);
   void drawPressureText(float p0, float p1);
   void drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
                             bool sd_error,
