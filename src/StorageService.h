@@ -26,23 +26,24 @@ public:
     requests = xQueueCreate(1, sizeof(Request));
     resultMutex = xSemaphoreCreateMutex();
     busMutex = xSemaphoreCreateMutex();
-    return requests && resultMutex && busMutex;
+    return ready();
   }
-  bool tryBeginDisplay() { return busMutex && xSemaphoreTake(busMutex,0)==pdTRUE; }
+  bool ready() const { return requests && resultMutex && busMutex; }
+  bool tryBeginDisplay() { return ready() && xSemaphoreTake(busMutex,0)==pdTRUE; }
   void endDisplay() { xSemaphoreGive(busMutex); }
   bool requestList() {
     Request request{};
-    return requests && xQueueSend(requests,&request,0)==pdTRUE;
+    return ready() && xQueueSend(requests,&request,0)==pdTRUE;
   }
   bool requestDelete(const String& name) {
     Request request{};
     request.remove=true;
     if (name.length() >= sizeof(request.name)) return false;
     memcpy(request.name,name.c_str(),name.length()+1);
-    return requests && xQueueSend(requests,&request,0)==pdTRUE;
+    return ready() && xQueueSend(requests,&request,0)==pdTRUE;
   }
   bool takeResult(std::vector<String>& files, std::vector<long>& sizes, bool& success) {
-    if (!resultMutex || xSemaphoreTake(resultMutex,0)!=pdTRUE) return false;
+    if (!ready() || xSemaphoreTake(resultMutex,0)!=pdTRUE) return false;
     bool ready=resultReady;
     if (ready) {
       files.swap(resultFiles); sizes.swap(resultSizes);
@@ -52,7 +53,7 @@ public:
     return ready;
   }
   void step() {
-    if (!busMutex) return;
+    if (!ready()) return;
     xSemaphoreTake(busMutex,portMAX_DELAY);
     RecordEvent event;
     // Bound worker iterations too: allow the idle task to run under sustained load.

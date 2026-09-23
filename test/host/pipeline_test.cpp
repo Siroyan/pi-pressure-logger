@@ -58,3 +58,18 @@ TEST(file_operations_are_queued_and_run_only_after_recording_drains) {
   service.step(); CHECK(service.takeResult(files,sizes,success));
   CHECK(success && files.empty() && disk.files.empty());
 }
+
+TEST(storage_resource_allocation_failures_leave_public_operations_safe) {
+  for(unsigned failure=0;failure<3;++failure) {
+    disk={}; SDManager sd; CHECK(sd.init()); RecordingQueue queue; CHECK(queue.init(8));
+    if (failure==0) queue_fail_after=0;
+    else semaphore_fail_after=failure-1;
+    StorageService storage(sd,queue); CHECK(!storage.init());
+    queue_fail_after=-1; semaphore_fail_after=-1;
+    CHECK(!storage.ready() && !storage.requestList());
+    CHECK(!storage.requestDelete("pressure_log_1.csv") && !storage.tryBeginDisplay());
+    storage.step();
+    std::vector<String> files; std::vector<long> sizes; bool success;
+    CHECK(!storage.takeResult(files,sizes,success)); CHECK(disk.opens==0);
+  }
+}
