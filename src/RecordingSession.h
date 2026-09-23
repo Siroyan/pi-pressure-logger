@@ -9,6 +9,7 @@ struct RecordEvent {
   PressureSample sample;
   uint32_t session;
   uint32_t sequence;
+  uint32_t dropped = 0, highWater = 0;
 };
 
 // Calls are serialized by the queue adapter. The sink reserves capacity for

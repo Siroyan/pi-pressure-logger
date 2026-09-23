@@ -4,6 +4,7 @@
 #include <memory>
 #include <limits>
 #include <vector>
+#include <functional>
 constexpr const char* FILE_WRITE = "w";
 constexpr const char* FILE_APPEND = "a";
 constexpr const char* FILE_READ = "r";
@@ -13,6 +14,7 @@ struct FakeDisk {
   bool flush_error=false;
   size_t capacity=std::numeric_limits<size_t>::max();
   unsigned opens=0, closes=0;
+  std::function<void()> onWrite;
 };
 inline FakeDisk disk;
 class File {
@@ -29,7 +31,8 @@ public:
   bool isDirectory() const { return directory; }
   const char* name() const { return path.c_str()+(!path.empty() && path[0]=='/' ? 1 : 0); }
   size_t write(const uint8_t* data,size_t length) {
-    if (!open) return 0;
+    if (!open || !disk.mounted) return 0;
+    if (disk.onWrite) disk.onWrite();
     size_t n=std::min(length,disk.capacity); disk.files[path].append(reinterpret_cast<const char*>(data),n); disk.capacity-=n; return n;
   }
   size_t print(const String& s) { return write(reinterpret_cast<const uint8_t*>(s.c_str()),s.length()); }

@@ -14,6 +14,7 @@ public:
       activeSession = event.session;
       sd.startRecording(event.sample.timestamp);
     } else if (event.kind == RecordKind::Stop && event.session == activeSession) {
+      sd.writeSummary(event.session, event.dropped, event.highWater);
       sd.stopRecording();
       activeSession = 0;
     } else if (event.kind == RecordKind::Sample && activeSession && event.session == activeSession) {

@@ -18,16 +18,16 @@ TEST(start_open_failure_does_not_claim_sd_recording) {
   CHECK(!sd.startRecording(fake_millis)); CHECK(!sd.isRecording()); CHECK(sd.hasWriteError());
 }
 
-TEST(append_failure_stops_recording) {
+TEST(card_removal_stops_recording_on_flush) {
   disk={}; SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(fake_millis));
-  disk.fail_open=true;
-  CHECK(!sd.logData({0.6f,-0.1f,fake_millis})); CHECK(!sd.isRecording()); CHECK(sd.hasWriteError());
+  disk.mounted=false;
+  CHECK(sd.logData({0.6f,-0.1f,fake_millis})); CHECK(!sd.flush()); CHECK(!sd.isRecording()); CHECK(sd.hasWriteError());
 }
 
 TEST(csv_retains_out_of_display_range_values) {
   disk={}; fake_millis=100;
   SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(fake_millis)); fake_millis=110;
-  CHECK(sd.logData({0.6f,-0.1f,fake_millis}));
+  CHECK(sd.logData({0.6f,-0.1f,fake_millis})); CHECK(sd.flush());
   CHECK(disk.files.begin()->second.find("10,0.6000,-0.1000\r\n")!=std::string::npos);
 }
 
@@ -46,7 +46,7 @@ TEST(every_truncated_data_row_is_rejected_including_missing_newline) {
     disk={}; fake_millis=100;
     SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(fake_millis));
     disk.capacity=limit; fake_millis=110;
-    CHECK(!sd.logData({0.6f,-0.1f,fake_millis})); CHECK(sd.hasWriteError()); CHECK(!sd.isRecording());
+    CHECK(sd.logData({0.6f,-0.1f,fake_millis})); CHECK(!sd.flush()); CHECK(sd.hasWriteError()); CHECK(!sd.isRecording());
     auto contents=disk.files.begin()->second;
     CHECK(!sd.logData({0.6f,-0.1f,fake_millis})); CHECK(disk.files.begin()->second==contents);
   }
@@ -55,7 +55,7 @@ TEST(every_truncated_data_row_is_rejected_including_missing_newline) {
 TEST(write_error_requires_new_session_and_preserves_failed_file) {
   disk={}; fake_millis=100;
   SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(fake_millis));
-  disk.capacity=3; CHECK(!sd.logData({1,2,fake_millis}));
+  disk.capacity=3; CHECK(sd.logData({1,2,fake_millis})); CHECK(!sd.flush());
   auto failed=disk.files.begin()->second;
   disk.capacity=1000;
   CHECK(sd.startRecording(fake_millis)); CHECK(!sd.hasWriteError());
@@ -68,7 +68,7 @@ TEST(reported_flush_error_is_not_success) {
   disk={}; SDManager sd; CHECK(sd.init());
   disk.flush_error=true; CHECK(!sd.startRecording(fake_millis));
   disk.flush_error=false; CHECK(sd.startRecording(fake_millis));
-  disk.flush_error=true; CHECK(!sd.logData({1,2,fake_millis})); CHECK(sd.hasWriteError());
+  disk.flush_error=true; CHECK(sd.logData({1,2,fake_millis})); CHECK(!sd.flush()); CHECK(sd.hasWriteError());
 }
 
 #include "TimeManager.h"
@@ -88,6 +88,7 @@ TEST(delayed_samples_keep_acquisition_time_across_32_bit_wrap) {
   fake_millis=2000;  // Consumption occurs much later.
   CHECK(sd.logData({0.1f,0.2f,start+2}));
   CHECK(sd.logData({0.3f,0.4f,start+12}));
+  CHECK(sd.flush());
   const auto& csv=disk.files.begin()->second;
   CHECK(csv.find("2,0.1000,0.2000\r\n")!=std::string::npos);
   CHECK(csv.find("12,0.3000,0.4000\r\n")!=std::string::npos);

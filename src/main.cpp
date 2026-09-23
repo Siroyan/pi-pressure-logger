@@ -12,11 +12,10 @@
 #include "SDManager.h"
 #include "DisplayManager.h"
 #include "TimeManager.h"
+#include "StorageService.h"
 #include "RuntimeStartup.h"
-#include "RecordingWriter.h"
 #include <freertos/queue.h>
 #include <freertos/task.h>
-#include <esp_timer.h>
 
 Adafruit_ADS1015 ads;
 bool adc_available = false;
@@ -39,7 +38,7 @@ const int interval_ms = 1000 / sampling_rate;
 const int sample_queue_size = 512;
 const int max_samples_per_loop = 4;
 RecordingQueue recordingQueue;
-volatile unsigned long dropped_sample_count = 0;
+
 
 // Button debounce variables
 unsigned long button_press_time = 0;
@@ -51,116 +50,73 @@ WiFiManager wifiManager(ssid, password);
 MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name,
                         aws_iot_topic, aws_root_ca, device_cert, device_key);
 SDManager sdManager;
-RecordingWriter recordingWriter(sdManager);
+StorageService storageService(sdManager, recordingQueue);
+std::vector<String> listedFiles;
+std::vector<long> listedSizes;
+bool fileRequestPending = false;
+bool screenDirty = true;
+bool fileOperationSuccess = true;
 DisplayManager displayManager;
 TimeManager timeManager;
 StateManager stateManager;
-FileAction fileAction;
 RuntimeStartup runtime;
+FileAction fileAction;
+
+void requestFileList() {
+  fileRequestPending = runtime.storage && storageService.requestList();
+  fileOperationSuccess = fileRequestPending;
+  screenDirty = true;
+}
 
 void handleButtonInput() {
   if (stateManager.getCurrentState() == FILE_LIST && fileAction.status() != FileAction::Status::None) {
-    if (M5.BtnC.wasPressed()) {
-      if (fileAction.dismiss()) {
-        auto files=sdManager.getLogFileList(); std::vector<long> sizes;
-        for (const auto& name:files) sizes.push_back(sdManager.getFileSize(name));
-        displayManager.resetFileListNavigation();
-        displayManager.drawFileList(files,sizes);
-      }
-    } else if (M5.BtnB.wasPressed() && fileAction.confirm()) {
-      displayManager.drawFileAction(fileAction);
-      fileAction.complete(sdManager.deleteFile(fileAction.filename()));
-      displayManager.drawFileAction(fileAction);
+    if (M5.BtnC.wasPressed() && fileAction.dismiss()) requestFileList();
+    else if (M5.BtnB.wasPressed() && fileAction.confirm()) {
+      fileRequestPending = runtime.storage && storageService.requestDelete(fileAction.filename());
+      if (!fileRequestPending) fileAction.complete(false);
     }
-    button_press_time=0;
+    screenDirty = true;
+    button_press_time = 0;
     return;
   }
-  // Handle Button A for recording toggle with debounce
-  if (M5.BtnA.wasPressed()) {
-    button_press_time = millis();
-  }
-  
+  if (M5.BtnA.wasPressed()) button_press_time = millis();
   if (M5.BtnA.wasReleased() && button_press_time > 0) {
-    unsigned long press_duration = millis() - button_press_time;
-    if (press_duration >= min_press_duration) {
-      Serial.println("BtnA valid press detected (" + String(press_duration) + "ms)");
-      
+    if (millis() - button_press_time >= min_press_duration) {
       if (stateManager.getCurrentState() == FILE_LIST) {
-        // In file list: Button A scrolls down
-        std::vector<String> files = sdManager.getLogFileList();
-        displayManager.navigateFileList(1, files.size());
-        
-        // Update display with file sizes
-        std::vector<long> fileSizes;
-        for (const String& file : files) {
-          fileSizes.push_back(sdManager.getFileSize(file));
+        if (!fileRequestPending) {
+          displayManager.navigateFileList(1, listedFiles.size());
+          screenDirty = true;
         }
-        displayManager.drawFileList(files, fileSizes);
-      } else {
-        // Normal toggle behavior
-        if (adc_available) {
-          stateManager.toggleState();
-        } else {
-          Serial.println("Recording unavailable: ADS1015 initialization failed");
-        }
-        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
-                                            sdManager.hasWriteError(),
-                                            wifiManager.isConnected(), mqttManager.isConnected());
+      } else if (adc_available || stateManager.getCurrentState() == RECORDING) {
+        stateManager.toggleState();
+        screenDirty = true;
       }
-    } else {
-      Serial.println("BtnA press too short (" + String(press_duration) + "ms) - ignored");
     }
     button_press_time = 0;
   }
-  
-  // Handle Button B
   if (M5.BtnB.wasPressed()) {
     if (stateManager.getCurrentState() == FILE_LIST) {
-      // In file list: Button B deletes selected file
-      std::vector<String> files = sdManager.getLogFileList();
-      if (!files.empty()) {
-        int selectedIndex = displayManager.getSelectedFileIndex();
-        if (selectedIndex >= 0 && selectedIndex < files.size()) {
-          String selectedFile = files[selectedIndex];
-          
-          fileAction.begin(selectedFile,sdManager.getFileSize(selectedFile));
-          displayManager.drawFileAction(fileAction);
-        }
+      int selected = displayManager.getSelectedFileIndex();
+      if (!fileRequestPending && selected >= 0 && selected < (int)listedFiles.size()) {
+        fileAction.begin(listedFiles[selected],listedSizes[selected]);
+        screenDirty = true;
       }
-    } else {
-      // Handle transition to file list
-      stateManager.handleButtonB();
-      
-      if (stateManager.getCurrentState() == FILE_LIST) {
-        // Entered file list mode - display files
-        displayManager.resetFileListNavigation();
-        std::vector<String> files = sdManager.getLogFileList();
-        
-        // Get file sizes
-        std::vector<long> fileSizes;
-        for (const String& file : files) {
-          fileSizes.push_back(sdManager.getFileSize(file));
-        }
-        
-        displayManager.drawFileList(files, fileSizes);
-      } else {
-        // Exited file list mode - display will be restored by StateManager
-        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
-                                            sdManager.hasWriteError(),
-                                            wifiManager.isConnected(), mqttManager.isConnected());
-      }
+    } else if (stateManager.getCurrentState() == STANDBY) {
+      stateManager.transitionToFileList();
+      displayManager.resetFileListNavigation();
+      requestFileList();
     }
   }
-  
-  // Handle Button C for returning to waveform screen
-  if (M5.BtnC.wasPressed()) {
-    if (stateManager.getCurrentState() == FILE_LIST) {
-      // Return to STANDBY (waveform screen)
-      stateManager.transitionToStandby();
-      displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
-                                          sdManager.hasWriteError(),
-                                          wifiManager.isConnected(), mqttManager.isConnected());
-    }
+  if (M5.BtnC.wasPressed() && stateManager.getCurrentState() == FILE_LIST) {
+    stateManager.transitionToStandby();
+    screenDirty = true;
+  }
+}
+
+void storageTask(void*) {
+  while (true) {
+    storageService.step();
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -168,6 +124,12 @@ void handleNetworkMaintenance() {
   // Check WiFi connection and maintain MQTT
   wifiManager.checkConnection();
   timeManager.poll();
+  RecordEvent event;
+  if (recordingQueue.receiveNetwork(event)) {
+    if (event.kind == RecordKind::Sample && event.session) {
+      mqttManager.offer({event.sample.p0,event.sample.p1,event.sample.timestamp,event.session,event.sequence});
+    } else mqttManager.clearPending();
+  }
   mqttManager.loop(wifiManager.isConnected() && timeManager.isTimeSynced());
 }
 
@@ -181,10 +143,8 @@ void samplingTask(void* parameter) {
     float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f;
     float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
 
-    if (!recordingQueue.submit((v0_original - 1.0f) / 4.0f,
-                               (v1_original - 1.0f) / 4.0f)) {
-      dropped_sample_count++;
-    }
+    recordingQueue.submit((v0_original - 1.0f) / 4.0f,
+                          (v1_original - 1.0f) / 4.0f);
   }
 }
 
@@ -226,14 +186,16 @@ void setup() {
                                       wifiManager.isConnected(), mqttManager.isConnected());
 
   stateManager.setRecordingQueue(&recordingQueue);
-  runtime = startRuntime(adc_available, mqttManager.isReady(), [] {
+  runtime = startStorageRuntime(adc_available,mqttManager.isReady(), [] {
     return recordingQueue.init(sample_queue_size);
   }, [] {
-    return xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1) == pdPASS;
+    return storageService.init();
   }, [] {
-    // Idle priority keeps the Core 0 watchdog serviced during TLS connection.
-    return xTaskCreatePinnedToCore(networkTask, "network-maintenance", 8192, nullptr,
-                                   tskIDLE_PRIORITY, nullptr, 0) == pdPASS;
+    return xTaskCreatePinnedToCore(storageTask,"pressure-storage",6144,nullptr,1,nullptr,1)==pdPASS;
+  }, [] {
+    return xTaskCreatePinnedToCore(samplingTask,"pressure-sampling",4096,nullptr,3,nullptr,1)==pdPASS;
+  }, [] {
+    return xTaskCreatePinnedToCore(networkTask,"network-maintenance",8192,nullptr,tskIDLE_PRIORITY,nullptr,0)==pdPASS;
   });
   stateManager.setRecordingReady(runtime.acquisition);
   if (runtime.error) Serial.println(runtime.error);
@@ -246,36 +208,52 @@ void loop() {
   
   // Handle user input
   handleButtonInput();
-  if (stateManager.getCurrentState() != FILE_LIST)
-    displayManager.advanceGraph(static_cast<uint64_t>(esp_timer_get_time()) / 1000);
   
-  // Update connection status display periodically
-  static unsigned long last_status_update = 0;
-  if (stateManager.getCurrentState() != FILE_LIST && now - last_status_update >= 500) {
-    last_status_update = now;
-    M5.Lcd.fillRect(30,200,280,9,BLACK);
-    if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
-    displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
-                                        sdManager.hasWriteError(),
-                                        wifiManager.isConnected(), mqttManager.isConnected());
+  if (storageService.takeResult(listedFiles, listedSizes, fileOperationSuccess)) {
+    fileRequestPending = false;
+    if (fileAction.status()==FileAction::Status::Busy) fileAction.complete(fileOperationSuccess);
+    displayManager.resetFileListNavigation();
+    screenDirty = true;
   }
-  
-  RecordEvent event;
-  int processed_samples = 0;
-  while (processed_samples < max_samples_per_loop && recordingQueue.receive(event)) {
-    if (recordingWriter.process(event)) {
-      mqttManager.offer({event.sample.p0,event.sample.p1,event.sample.timestamp,event.session,event.sequence});
-    } else if (event.kind == RecordKind::Stop) mqttManager.clearPending();
-    if (event.kind == RecordKind::Sample) {
-      stateManager.processSensorData(event.sample.p0, event.sample.p1, event.sample.timestamp);
+  // SD and LCD share SPI on the M5Stack. Skip drawing rather than blocking
+  // button polling on the SD driver's bus transaction.
+  if (!runtime.storage || storageService.tryBeginDisplay()) {
+    if (stateManager.getCurrentState() == FILE_LIST) {
+      if (screenDirty) {
+        if (fileAction.status()!=FileAction::Status::None) {
+          displayManager.drawFileAction(fileAction);
+        } else if (fileRequestPending) {
+          M5.Lcd.fillScreen(BLACK); M5.Lcd.setCursor(10,10); M5.Lcd.print("Loading... C:Back");
+        } else {
+          displayManager.drawFileList(listedFiles, listedSizes);
+          if (!fileOperationSuccess) { M5.Lcd.setCursor(10,200); M5.Lcd.print("Storage operation failed"); }
+        }
+        screenDirty = false;
+      }
+    } else {
+      if (screenDirty) { displayManager.init(); screenDirty = false; }
+      displayManager.advanceGraph(acquisitionMillis());
+      static unsigned long last_status_update = 0;
+      if (now - last_status_update >= 500) {
+        last_status_update = now;
+        M5.Lcd.fillRect(30,200,280,9,BLACK);
+        if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
+        displayManager.drawConnectionStatus(adc_available, sdManager.isAvailable(), sdManager.isRecording(),
+                                            sdManager.hasWriteError(),
+                                            wifiManager.isConnected(), mqttManager.isConnected());
+      }
     }
-    processed_samples++;
+    PressureSample sample;
+    for (int i=0; i<max_samples_per_loop && recordingQueue.receiveDisplay(sample); ++i) {
+      stateManager.processSensorData(sample.p0, sample.p1, sample.timestamp);
+    }
+    if (runtime.storage) storageService.endDisplay();
   }
   static unsigned long last_drop_report = 0;
-  static unsigned long reported_drop_count = 0;
-  if (now - last_drop_report >= 5000 && dropped_sample_count != reported_drop_count) {
+  if (now - last_drop_report >= 5000) {
     last_drop_report = now;
-    reported_drop_count = dropped_sample_count;
-    Serial.println("Dropped pressure samples: " + String(reported_drop_count));
+    Serial.printf("Session %u: storage queue high-water %u, total dropped %u\n",
+                  recordingQueue.sessionId(), recordingQueue.maxDepth(), recordingQueue.droppedSamples());
   }
+
 }

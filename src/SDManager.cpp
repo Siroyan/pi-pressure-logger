@@ -76,8 +76,8 @@ String SDManager::createLogFile() {
     }
     file.flush();
     complete = complete && file.getWriteError() == 0;
-    file.close();
-    if (!complete) return "";
+    if (!complete) { file.close(); return ""; }
+    log_file = file;
     Serial.println("Created log file: " + filename);
     return filename;
   }
@@ -114,6 +114,7 @@ bool SDManager::startRecording(uint64_t started_at) {
   if (recording) return false;
   recording = false;
   log_filename = "";
+  batch_size = 0;
 
   // A new user-requested session is the only recovery attempt. Keep the
   // failed file for diagnosis; never append to it after remounting.
@@ -131,6 +132,7 @@ bool SDManager::startRecording(uint64_t started_at) {
     write_error = false;
     recording = true;
     session_start_time = started_at;
+    last_flush = millis();
     Serial.println("Recording started");
     return true;
   }
@@ -146,6 +148,8 @@ bool SDManager::writeLine(File& file, const String& line) {
 }
 
 void SDManager::failWrite() {
+  if (log_file) log_file.close();
+  batch_size = 0;
   recording = false;
   write_error = true;
   sd_available = false;
@@ -154,6 +158,8 @@ void SDManager::failWrite() {
 
 void SDManager::stopRecording() {
   if (recording) {
+    flush();
+    log_file.close();
     recording = false;
     Serial.println("Recording stopped");
   }
@@ -163,27 +169,45 @@ bool SDManager::logData(const PressureSample& sample) {
   if (!sd_available || log_filename == "" || !recording) return false;
   if (sample.timestamp < session_start_time) return false;
   
-  File file = SD.open(log_filename.c_str(), FILE_APPEND);
-  if (!file) {
-    failWrite();
-    Serial.println("Failed to open log file for append; recording stopped");
-    return false;
-  }
-
   uint64_t timestamp = sample.timestamp - session_start_time;
   String row = String(timestamp) + "," + String(sample.p0, 4) + "," + String(sample.p1, 4);
-  bool complete = writeLine(file, row);
-  file.flush();
-  complete = complete && file.getWriteError() == 0;
-  file.close();
+  return append(row + "\r\n");
+}
 
-  if (!complete) {
+bool SDManager::append(const String& bytes) {
+  if (bytes.length() > sizeof(batch)) { failWrite(); return false; }
+  if (batch_size + bytes.length() > sizeof(batch) && !writeBatch()) return false;
+  memcpy(batch + batch_size, bytes.c_str(), bytes.length());
+  batch_size += bytes.length();
+  return true;
+}
+
+bool SDManager::writeBatch() {
+  if (!recording) return false;
+  if (batch_size && (log_file.write(reinterpret_cast<const uint8_t*>(batch), batch_size) != batch_size ||
+                     log_file.getWriteError())) {
     failWrite();
-    Serial.println("Failed to write log data; recording stopped");
     return false;
   }
-
+  batch_size = 0;
   return true;
+}
+
+bool SDManager::flush() {
+  if (!writeBatch()) return false;
+  log_file.flush();
+  last_flush = millis();
+  if (log_file.getWriteError()) { failWrite(); return false; }
+  return true;
+}
+
+void SDManager::poll() {
+  if (recording && static_cast<uint32_t>(millis() - last_flush) >= 1000) flush();
+}
+
+void SDManager::writeSummary(uint32_t session, uint32_t dropped, uint32_t high_water) {
+  if (recording) append("# Session: " + String(session) + ", dropped: " + String(dropped) +
+                        ", queue_high_water: " + String(high_water) + "\r\n");
 }
 
 std::vector<String> SDManager::getLogFileList() {

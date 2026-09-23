@@ -37,3 +37,23 @@ TEST(mqtt_buffer_allocation_failure_is_safe_for_all_public_operations) {
   mqtt.offer({1,2,1000,1,1}); mqtt.loop(); mqtt.clearPending();
   CHECK(transport.connects==0 && transport.publications.empty());
 }
+
+TEST(storage_startup_failure_prevents_acquisition_but_allows_network_diagnostics) {
+  for (unsigned fail=0; fail<4; ++fail) {
+    unsigned sampling=0,storage=0;
+    auto status=startStorageRuntime(true,true,[&] { return fail!=0; },
+      [&] { return fail!=1; }, [&] { ++storage; return fail!=2; },
+      [&] { ++sampling; return fail!=3; }, [] { return true; });
+    CHECK(!status.acquisition && status.network && status.error);
+    CHECK(storage==(fail>=2 ? 1u:0u)); CHECK(sampling==(fail==3 ? 1u:0u));
+  }
+}
+
+TEST(partially_allocated_recording_queues_reject_start_and_sample_safely) {
+  for(int fail=0;fail<3;++fail) {
+    queue_fail_after=fail;
+    RecordingQueue queue; CHECK(!queue.init(8));
+    CHECK(!queue.start()); CHECK(!queue.submit(1,2)); CHECK(queue.stop());
+    queue_fail_after=-1;
+  }
+}

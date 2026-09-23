@@ -69,9 +69,7 @@ void StateManager::handleButtonB() {
 void StateManager::onEnterStandby() {
   
   // If coming from FILE_LIST, restore the waveform display
-  if (displayManager) {
-    displayManager->init();
-  }
+  // Screen restoration is scheduled by the UI when the shared SPI bus is free.
   
   Serial.println("State: STANDBY");
 }
