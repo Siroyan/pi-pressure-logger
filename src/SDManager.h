@@ -38,6 +38,8 @@ public:
 private:
   String createLogFile();
   String createUniqueFilename(const String& filename);
+  bool writeLine(File& file, const String& line);
+  void failWrite();
 };
 
 #endif // SD_MANAGER_H

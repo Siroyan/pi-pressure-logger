@@ -81,7 +81,7 @@ void StateManager::onEnterStandby() {
 void StateManager::onEnterRecording() {
   ++recordingSession; if (!recordingSession) ++recordingSession;
   sequence = 0;
-  if (sdManager && sdManager->isAvailable()) {
+  if (sdManager) {
     if (!sdManager->startRecording()) {
       Serial.println("SD recording could not be started; MQTT publishing remains active");
     }

@@ -68,14 +68,16 @@ String SDManager::createLogFile() {
   File file = SD.open(filename.c_str(), FILE_WRITE);
   if (file) {
     // Write CSV header with timestamp info
-    file.println("Timestamp(ms),CH0(MPa),CH1(MPa)");
+    bool complete = writeLine(file, "Timestamp(ms),CH0(MPa),CH1(MPa)");
     
     // Add a comment with session start time if NTP is available
-    if (timeManager && timeManager->isTimeSynced()) {
-      file.println("# Session started: " + timeManager->getCurrentTimeString());
+    if (complete && timeManager && timeManager->isTimeSynced()) {
+      complete = writeLine(file, "# Session started: " + timeManager->getCurrentTimeString());
     }
-    
+    file.flush();
+    complete = complete && file.getWriteError() == 0;
     file.close();
+    if (!complete) return "";
     Serial.println("Created log file: " + filename);
     return filename;
   }
@@ -109,10 +111,16 @@ String SDManager::createUniqueFilename(const String& filename) {
 }
 
 bool SDManager::startRecording() {
-  write_error = false;
+  if (recording) return false;
   recording = false;
   log_filename = "";
 
+  // A new user-requested session is the only recovery attempt. Keep the
+  // failed file for diagnosis; never append to it after remounting.
+  if (write_error || !sd_available) {
+    SD.end();
+    init();
+  }
   if (!sd_available) {
     write_error = true;
     return false;
@@ -120,14 +128,28 @@ bool SDManager::startRecording() {
   
   log_filename = createLogFile();
   if (log_filename != "") {
+    write_error = false;
     recording = true;
     session_start_time = millis();
     Serial.println("Recording started");
     return true;
   }
 
-  write_error = true;
+  failWrite();
   return false;
+}
+
+bool SDManager::writeLine(File& file, const String& line) {
+  const String bytes = line + "\r\n";
+  return file.write(reinterpret_cast<const uint8_t*>(bytes.c_str()), bytes.length()) == bytes.length()
+      && file.getWriteError() == 0;
+}
+
+void SDManager::failWrite() {
+  recording = false;
+  write_error = true;
+  sd_available = false;
+  Serial.println("SD write failed; stop/restart recording to remount and create a new file");
 }
 
 void SDManager::stopRecording() {
@@ -142,20 +164,20 @@ bool SDManager::logData(float p0, float p1) {
   
   File file = SD.open(log_filename.c_str(), FILE_APPEND);
   if (!file) {
-    recording = false;
-    write_error = true;
+    failWrite();
     Serial.println("Failed to open log file for append; recording stopped");
     return false;
   }
 
   unsigned long timestamp = millis() - session_start_time;
   String row = String(timestamp) + "," + String(p0, 4) + "," + String(p1, 4);
-  size_t bytesWritten = file.println(row);
+  bool complete = writeLine(file, row);
+  file.flush();
+  complete = complete && file.getWriteError() == 0;
   file.close();
 
-  if (bytesWritten == 0) {
-    recording = false;
-    write_error = true;
+  if (!complete) {
+    failWrite();
     Serial.println("Failed to write log data; recording stopped");
     return false;
   }

@@ -10,6 +10,7 @@ constexpr const char* FILE_READ = "r";
 struct FakeDisk {
   std::map<std::string,std::string> files;
   bool mounted=true, fail_open=false;
+  bool flush_error=false;
   size_t capacity=std::numeric_limits<size_t>::max();
   unsigned opens=0, closes=0;
 };
@@ -33,10 +34,12 @@ public:
   }
   size_t print(const String& s) { return write(reinterpret_cast<const uint8_t*>(s.c_str()),s.length()); }
   size_t println(const String& s) { size_t n=print(s); return n+print("\r\n"); }
-  void flush() {}
-  int getWriteError() const { return 0; }
+  void flush() { error=disk.flush_error; }
+  int getWriteError() const { return error; }
   void clearWriteError() {}
   void close() { if(open) ++disk.closes; open=false; }
   long size() const { auto it=disk.files.find(path); return it==disk.files.end()?0:it->second.size(); }
   File openNextFile() { return index<names.size()?File(names[index++]):File(); }
+private:
+  bool error=false;
 };
