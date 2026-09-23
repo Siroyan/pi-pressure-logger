@@ -8,6 +8,7 @@ class DisplayManager {
 private:
   float last_displayed_v0;
   float last_displayed_v1;
+  bool pressure_text_valid = false;
   
   // File list display variables
   int selected_file_index;

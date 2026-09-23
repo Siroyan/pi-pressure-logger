@@ -12,6 +12,7 @@ DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1
   selected_file_index(0), scroll_offset(0) {}
 
 void DisplayManager::init() {
+  pressure_text_valid = false;
   M5.Lcd.setRotation(1);
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setTextColor(WHITE);
@@ -80,7 +81,7 @@ void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_bu
 }
 
 void DisplayManager::drawPressureText(float p0, float p1) {
-  if (abs(p0 - last_displayed_v0) > 0.001 || abs(p1 - last_displayed_v1) > 0.001) {
+  if (!pressure_text_valid || abs(p0 - last_displayed_v0) > 0.001 || abs(p1 - last_displayed_v1) > 0.001) {
     M5.Lcd.fillRect(30, 210, 250, 15, BLACK);
     
     M5.Lcd.setTextSize(1);
@@ -89,6 +90,7 @@ void DisplayManager::drawPressureText(float p0, float p1) {
     
     last_displayed_v0 = p0;
     last_displayed_v1 = p1;
+    pressure_text_valid = true;
   }
 }
 
