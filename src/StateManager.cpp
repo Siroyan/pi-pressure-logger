@@ -98,7 +98,8 @@ void StateManager::processSensorData(float p0, float p1, unsigned long now) {
   
   // Only update display if not in file list mode
   if (displayManager && currentState != FILE_LIST) {
-    displayManager->drawOnePoint(buf_index, p0, p1, ch0_buffer, ch1_buffer, buffer_size);
+    displayManager->drawOnePoint(buf_index, p0, p1, ch0_buffer, ch1_buffer,
+                                 buffer_size, graph_gap_samples);
     displayManager->drawPressureText(p0, p1);
   }
   

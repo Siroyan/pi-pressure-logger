@@ -19,7 +19,8 @@ public:
   
   void init();
   void drawLabels();
-  void drawOnePoint(int i, float p0, float p1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size);
+  void drawOnePoint(int i, float p0, float p1, const float* ch0_buffer,
+                    const float* ch1_buffer, int buffer_size, int gap_samples);
   void drawPressureText(float p0, float p1);
   void drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
                             bool sd_error,

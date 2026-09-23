@@ -53,16 +53,23 @@ void DisplayManager::drawLabels() {
   drawButtonInstructions();
 }
 
-void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_buffer, const float* ch1_buffer, int buffer_size) {
+void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_buffer,
+                                  const float* ch1_buffer, int buffer_size, int gap_samples) {
   // Constrain pressure to 0.0~0.5 MPa
   p0 = constrain(p0, 0.0, 0.5);
   p1 = constrain(p1, 0.0, 0.5);
 
   int x = 31 + (i * kGraphXPixelSpan / buffer_size);  // x=31-307 (inside border)
+  int gap_index = (i + gap_samples) % buffer_size;
+  int gap_x = 31 + (gap_index * kGraphXPixelSpan / buffer_size);
 
   // Clear previous waveform (inside only)
   M5.Lcd.fillRect(x, 22, kGraphLineWidth, 76, BLACK);   // CH0 (y=22-97)
   M5.Lcd.fillRect(x, 122, kGraphLineWidth, 76, BLACK);  // CH1 (y=122-197)
+
+  // Extend the one-second blank band ahead of the latest sample.
+  M5.Lcd.fillRect(gap_x, 22, kGraphLineWidth, 76, BLACK);
+  M5.Lcd.fillRect(gap_x, 122, kGraphLineWidth, 76, BLACK);
 
   // Draw pixels (0.5MPa = top, 0.0MPa = bottom, limited to inside area)
   int y0 = 96 - (p0 / 0.5f) * kGraphLinePixelSpan;   // y=22-96

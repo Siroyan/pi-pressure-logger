@@ -13,6 +13,7 @@ extern float ch0_buffer[];
 extern float ch1_buffer[];
 extern int buf_index;
 extern const int buffer_size;
+extern const int graph_gap_samples;
 
 enum SystemState {
   STANDBY,
