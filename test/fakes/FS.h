@@ -14,6 +14,7 @@ struct FakeDisk {
   bool flush_error=false;
   size_t capacity=std::numeric_limits<size_t>::max();
   unsigned opens=0, closes=0;
+  std::vector<unsigned> mountPins;
   std::function<void()> onWrite;
 };
 inline FakeDisk disk;

@@ -1,6 +1,7 @@
 #include "SDManager.h"
 #include "TimeManager.h"
 #include <algorithm>
+#include <SPI.h>
 
 SDManager::SDManager() : sd_available(false), log_filename(""), session_start_time(0), recording(false), write_error(false), timeManager(nullptr) {}
 
@@ -9,7 +10,9 @@ void SDManager::setTimeManager(TimeManager* tm) {
 }
 
 bool SDManager::init() {
-  if (!SD.begin()) {
+  // M5Stack Basic SD CS is GPIO4; the ESP32 variant default SS is GPIO5.
+  // Explicit settings are essential after SD.end() during recovery.
+  if (!SD.begin(4, SPI, 40000000)) {
     Serial.println("SD Card Mount Failed");
     sd_available = false;
     return false;
