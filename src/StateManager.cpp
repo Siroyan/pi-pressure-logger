@@ -65,6 +65,7 @@ void StateManager::handleButtonB() {
 }
 
 void StateManager::onEnterStandby() {
+  if (mqttManager) mqttManager->clearPending();
   if (sdManager && sdManager->isRecording()) {
     sdManager->stopRecording();
   }
@@ -78,6 +79,8 @@ void StateManager::onEnterStandby() {
 }
 
 void StateManager::onEnterRecording() {
+  ++recordingSession; if (!recordingSession) ++recordingSession;
+  sequence = 0;
   if (sdManager && sdManager->isAvailable()) {
     if (!sdManager->startRecording()) {
       Serial.println("SD recording could not be started; MQTT publishing remains active");
@@ -129,10 +132,7 @@ void StateManager::handleRecordingState(float p0, float p1, uint64_t now) {
   }
   
   // Publish data via MQTT (at 500ms intervals)
-  if (mqttManager && mqttManager->canPublish(now)) {
-    mqttManager->publishData(p0, p1);
-    mqttManager->updateLastSendTime(now);
-  }
+  if (mqttManager) mqttManager->offer({p0,p1,now,recordingSession,++sequence});
 }
 
 void StateManager::handleFileListState() {

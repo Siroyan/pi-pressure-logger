@@ -28,11 +28,11 @@ TEST(resource_creation_failures_disable_recording_without_disabling_file_screen)
   }
 }
 
-TEST(mqtt_mutex_allocation_failure_is_safe_for_all_public_operations) {
-  semaphore_fail=true;
+TEST(mqtt_buffer_allocation_failure_is_safe_for_all_public_operations) {
+  transport={}; transport.bufferAvailable=false;
   WiFiClientSecure tls;
   MQTTManager mqtt(&tls,"example.invalid",8883,"test","data","","","");
-  semaphore_fail=false;
-  CHECK(!mqtt.init()); CHECK(!mqtt.isReady()); CHECK(!mqtt.isConnected()); CHECK(!mqtt.canPublish(1000));
-  mqtt.loop(); mqtt.publishData(1,2); mqtt.updateLastSendTime(1000);
+  CHECK(!mqtt.init()); CHECK(!mqtt.isReady()); CHECK(!mqtt.isConnected());
+  mqtt.offer({1,2,1000,1,1}); mqtt.loop(); mqtt.clearPending();
+  CHECK(transport.connects==0 && transport.publications.empty());
 }

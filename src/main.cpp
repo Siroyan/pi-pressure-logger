@@ -171,7 +171,7 @@ void handleNetworkMaintenance() {
   // Check WiFi connection and maintain MQTT
   wifiManager.checkConnection();
   timeManager.poll();
-  if (wifiManager.isConnected() && timeManager.isTimeSynced()) mqttManager.loop();
+  mqttManager.loop(wifiManager.isConnected() && timeManager.isTimeSynced());
 }
 
 void samplingTask(void* parameter) {

@@ -189,7 +189,6 @@ pio device monitor
 シリアルモニターは115200 baudです。正常に接続すると、次のようなメッセージが表示されます。
 
 ```text
-AWS IoT certificates loaded
 connected to AWS IoT Core
 ```
 
@@ -213,12 +212,14 @@ LCDの`WiFi`と`AWS`表示も緑になります。NTPは非同期に同期し、
 {
   "timestamp": 123456789,
   "device": "PressureLogger",
+  "session": 1,
+  "sequence": 50,
   "ch0": 0.1234,
   "ch1": 0.2345
 }
 ```
 
-`timestamp`はUnix時刻ではなく、M5Stack起動後の`millis()`です。
+`timestamp`はUnix時刻ではなく、取得時の起動後64bitミリ秒です。`session`と`sequence`は起動中の記録セッションとサンプルの番号です。
 
 ## 8. A-03の通信分離を確認する
 
@@ -232,6 +233,8 @@ LCDの`WiFi`と`AWS`表示も緑になります。NTPは非同期に同期し、
 6. `Dropped pressure samples: N`が表示された場合は、キュー満杯による欠測数`N`を記録する。
 
 A-03はセンサー取得を通信保守タスクから分離しますが、AWS切断中のMQTTデータを再送する機能ではありません。切断中のクラウドデータは欠測します。キューは512サンプル、100 Hzで約5.12秒分です。通信断の長さ、欠測数、再接続までの時間を記録してください。
+
+MQTTはQoS 0で最新値を約500 ms間隔に配信します。100 Hzの全履歴を送る仕様ではありません。古い値の再送はせず、1秒を越えた値は送信しません。送信失敗でも試行間隔を500 ms空け、成功回数・成功時刻は失敗時に更新しません。PubSubClientの成功はAWS側での保存を保証する受領確認ではありません。セッション番号は再起動でリセットされます。
 
 ## トラブルシューティング
 
@@ -254,7 +257,7 @@ A-03はセンサー取得を通信保守タスクから分離しますが、AWS�
 - M5Stackが記録状態か確認する。
 - MQTTテストクライアントのリージョンと`pressure_logger/data`を確認する。
 - ポリシーが設定した`pressure_logger/data`への`iot:Publish`を許可していることを確認する。
-- シリアルの`Data published to AWS IoT`または`Failed to publish data`を確認する。
+- シリアルの`MQTT publish failed`と受信側の`session`・`sequence`を確認する。
 
 ### `Not authorized`になる
 

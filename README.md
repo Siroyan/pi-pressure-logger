@@ -135,12 +135,14 @@ Timestamp(ms),CH0(MPa),CH1(MPa)
 {
   "timestamp": 123456789,
   "device": "PressureLogger",
+  "session": 1,
+  "sequence": 50,
   "ch0": 0.1234,
   "ch1": 0.2345
 }
 ```
 
-`timestamp` は Unix 時刻ではなく、デバイス起動後の `millis()` です。AWS IoT ポリシーには、Thing の接続権限と設定したトピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
+`timestamp` はUnix時刻ではなく、サンプル取得時の起動後64bitミリ秒です。`session`は起動中の記録番号、`sequence`はセッション内のサンプル番号です。AWS IoT ポリシーには、Thing の接続権限と設定したトピックへの Publish 権限を付与してください。ポリシーの例は [AWS_SETUP.md](AWS_SETUP.md) にあります。
 
 ## プロジェクト構成
 
@@ -158,6 +160,8 @@ secure/
 └── aws_certificates.h.example # 証明書のテンプレート
 lib/Adafruit_ADS1X15/     # ADS1015 ライブラリ（Git サブモジュール）
 ```
+
+MQTTはQoS 0で最新値を約500 ms間隔に配信します。100 Hzの全履歴を送る仕様ではありません。古い値の再送はせず、1秒を越えた値は送信しません。送信失敗でも試行間隔を500 ms空け、成功回数・成功時刻は失敗時に更新しません。PubSubClientの成功はAWS側での保存を保証する受領確認ではありません。セッション番号は再起動でリセットされます。
 
 ## トラブルシューティング
 

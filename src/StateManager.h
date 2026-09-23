@@ -25,6 +25,7 @@ class StateManager {
 private:
   SystemState currentState;
   bool recordingReady = false;
+  uint32_t recordingSession = 0, sequence = 0;
   unsigned long stateChangeTime;
   SDManager* sdManager;
   MQTTManager* mqttManager;
