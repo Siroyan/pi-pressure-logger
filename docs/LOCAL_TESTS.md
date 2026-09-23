@@ -40,3 +40,7 @@ PubSubClientの操作を通信タスクへ集約し、UI／取得側は短いク
 約500msごとのQoS 0最新値配信であり、全履歴・古い失敗値の再送はしない。接続復帰時も最新スロットを取り直し、取得から1秒超の値は破棄する。試行間隔は送信完了後の実時計で判定し、失敗では成功時刻を進めない。記録停止は待機スロットを消すが、すでに通信タスクが取り出して送信中の1件までは取り消せない。`session`・`sequence`は起動中での識別用であり再起動を越えた一意IDではない。
 
 実MQTTManagerと通信境界fakeを使い、publish失敗、3秒の送信停止中の200件の新規投入、接続途中の更新、停止、古い値の拒否、時計周回、通信バッファ不足を検証する。実AWSへの接続は行っていない。
+
+### R2-B09追補: 推移依存の固定
+
+プラットフォーム7.1.3のmanifestはArduino frameworkとesptoolに範囲指定を使っているため、`platform_packages`でも検証済みframework・Xtensa toolchain・esptoolの完全なバージョンを指定する。CLIは`python3 -m pip install -r requirements-dev.txt`でPlatformIO 6.2.0を導入する。既存のPlatformIOを使う場合は`PIO`で実行ファイルを指定できる。ホストのC++コンパイラとOSは固定していないため、ファームウェアのバイト単位の再現性を保証するものではない。
