@@ -2,6 +2,7 @@
 #define STATE_MANAGER_H
 
 #include <Arduino.h>
+#include "RecordingQueue.h"
 
 // Forward declarations
 class SDManager;
@@ -25,17 +26,18 @@ class StateManager {
 private:
   SystemState currentState;
   bool recordingReady = false;
-  uint32_t recordingSession = 0, sequence = 0;
   unsigned long stateChangeTime;
   SDManager* sdManager;
   MQTTManager* mqttManager;
   DisplayManager* displayManager;
+  RecordingQueue* recordingQueue = nullptr;
   
 public:
   StateManager();
   
   void setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display, TimeManager* time = nullptr);
   void setRecordingReady(bool ready) { recordingReady = ready; }
+  void setRecordingQueue(RecordingQueue* queue) { recordingQueue = queue; }
   SystemState getCurrentState();
   void transitionToStandby();
   void transitionToRecording();
@@ -43,15 +45,11 @@ public:
   void toggleState();
   void handleButtonB();
   void processSensorData(float p0, float p1, uint64_t now);
-  void handleStateSpecificActions(float p0, float p1, uint64_t now);
   
 private:
   void onEnterStandby();
   void onEnterRecording();
   void onEnterFileList();
-  void handleStandbyState();
-  void handleRecordingState(float p0, float p1, uint64_t now);
-  void handleFileListState();
 };
 
 #endif // STATE_MANAGER_H

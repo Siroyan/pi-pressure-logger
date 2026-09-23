@@ -13,6 +13,7 @@
 #include "DisplayManager.h"
 #include "TimeManager.h"
 #include "RuntimeStartup.h"
+#include "RecordingWriter.h"
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <esp_timer.h>
@@ -37,7 +38,7 @@ const int interval_ms = 1000 / sampling_rate;
 
 const int sample_queue_size = 512;
 const int max_samples_per_loop = 4;
-QueueHandle_t sample_queue = nullptr;
+RecordingQueue recordingQueue;
 volatile unsigned long dropped_sample_count = 0;
 
 // Button debounce variables
@@ -50,6 +51,7 @@ WiFiManager wifiManager(ssid, password);
 MQTTManager mqttManager(&wifiClientSecure, aws_iot_endpoint, aws_iot_port, thing_name,
                         aws_iot_topic, aws_root_ca, device_cert, device_key);
 SDManager sdManager;
+RecordingWriter recordingWriter(sdManager);
 DisplayManager displayManager;
 TimeManager timeManager;
 StateManager stateManager;
@@ -179,12 +181,8 @@ void samplingTask(void* parameter) {
     float v0_original = ads.readADC_SingleEnded(0) * 0.003f * 2.0f;
     float v1_original = ads.readADC_SingleEnded(1) * 0.003f * 2.0f;
 
-    PressureSample sample;
-    sample.p0 = (v0_original - 1.0f) / 4.0f;
-    sample.p1 = (v1_original - 1.0f) / 4.0f;
-    sample.timestamp = acquisitionMillis();
-
-    if (xQueueSend(sample_queue, &sample, 0) != pdTRUE) {
+    if (!recordingQueue.submit((v0_original - 1.0f) / 4.0f,
+                               (v1_original - 1.0f) / 4.0f)) {
       dropped_sample_count++;
     }
   }
@@ -227,9 +225,9 @@ void setup() {
                                       sdManager.hasWriteError(),
                                       wifiManager.isConnected(), mqttManager.isConnected());
 
+  stateManager.setRecordingQueue(&recordingQueue);
   runtime = startRuntime(adc_available, mqttManager.isReady(), [] {
-    sample_queue = xQueueCreate(sample_queue_size, sizeof(PressureSample));
-    return sample_queue != nullptr;
+    return recordingQueue.init(sample_queue_size);
   }, [] {
     return xTaskCreatePinnedToCore(samplingTask, "pressure-sampling", 4096, nullptr, 3, nullptr, 1) == pdPASS;
   }, [] {
@@ -262,11 +260,15 @@ void loop() {
                                         wifiManager.isConnected(), mqttManager.isConnected());
   }
   
-  PressureSample sample;
+  RecordEvent event;
   int processed_samples = 0;
-  while (sample_queue && processed_samples < max_samples_per_loop &&
-         xQueueReceive(sample_queue, &sample, 0) == pdTRUE) {
-    stateManager.processSensorData(sample.p0, sample.p1, sample.timestamp);
+  while (processed_samples < max_samples_per_loop && recordingQueue.receive(event)) {
+    if (recordingWriter.process(event)) {
+      mqttManager.offer({event.sample.p0,event.sample.p1,event.sample.timestamp,event.session,event.sequence});
+    } else if (event.kind == RecordKind::Stop) mqttManager.clearPending();
+    if (event.kind == RecordKind::Sample) {
+      stateManager.processSensorData(event.sample.p0, event.sample.p1, event.sample.timestamp);
+    }
     processed_samples++;
   }
   static unsigned long last_drop_report = 0;

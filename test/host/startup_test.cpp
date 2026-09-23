@@ -21,7 +21,8 @@ TEST(resource_creation_failures_disable_recording_without_disabling_file_screen)
     CHECK(samplingCalls==(failure>1 ? 1u:0u));
     CHECK(networkCalls==(failure==3 ? 0u:1u));
     disk={}; SDManager sd; CHECK(sd.init());
-    StateManager state; state.setManagers(&sd,nullptr,nullptr);
+    RecordingQueue queue; CHECK(queue.init(16));
+    StateManager state; state.setRecordingQueue(&queue); state.setManagers(&sd,nullptr,nullptr);
     state.setRecordingReady(result.acquisition); state.transitionToRecording();
     CHECK((state.getCurrentState()==RECORDING)==result.acquisition);
     if (!result.acquisition) { CHECK(disk.opens==0); state.transitionToFileList(); CHECK(state.getCurrentState()==FILE_LIST); }
