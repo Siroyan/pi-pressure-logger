@@ -2,7 +2,10 @@
 
 namespace {
 constexpr unsigned long kSdErrorBlinkHalfPeriodMs = 500;
-constexpr int kGraphPixelSpan = 77;
+constexpr int kGraphTickPixelSpan = 75;
+constexpr int kGraphLinePixelSpan = 74;
+constexpr int kGraphLineWidth = 2;
+constexpr int kGraphXPixelSpan = 277;
 }
 
 DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1.0), 
@@ -28,7 +31,7 @@ void DisplayManager::drawLabels() {
   
   // CH0 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
-    int y = 98 - (i * kGraphPixelSpan / 4);  // y=98,79,60,41,21
+    int y = 97 - (i * kGraphTickPixelSpan / 4);  // y=97,79,60,41,22
     float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
@@ -37,7 +40,7 @@ void DisplayManager::drawLabels() {
   
   // CH1 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
-    int y = 198 - (i * kGraphPixelSpan / 4);  // y=198,179,160,141,121
+    int y = 197 - (i * kGraphTickPixelSpan / 4);  // y=197,179,160,141,122
     float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
@@ -55,18 +58,18 @@ void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_bu
   p0 = constrain(p0, 0.0, 0.5);
   p1 = constrain(p1, 0.0, 0.5);
 
-  int x = 31 + (i * 278 / buffer_size);  // x=31-308 (inside border)
+  int x = 31 + (i * kGraphXPixelSpan / buffer_size);  // x=31-307 (inside border)
 
   // Clear previous waveform (inside only)
-  M5.Lcd.fillRect(x, 21, 1, 78, BLACK);   // CH0 (y=21-98)
-  M5.Lcd.fillRect(x, 121, 1, 78, BLACK);  // CH1 (y=121-198)
+  M5.Lcd.fillRect(x, 22, kGraphLineWidth, 76, BLACK);   // CH0 (y=22-97)
+  M5.Lcd.fillRect(x, 122, kGraphLineWidth, 76, BLACK);  // CH1 (y=122-197)
 
   // Draw pixels (0.5MPa = top, 0.0MPa = bottom, limited to inside area)
-  int y0 = 98 - (p0 / 0.5f) * kGraphPixelSpan;   // y=21-98 (inside border)
-  int y1 = 198 - (p1 / 0.5f) * kGraphPixelSpan;  // y=121-198 (inside border)
+  int y0 = 96 - (p0 / 0.5f) * kGraphLinePixelSpan;   // y=22-96
+  int y1 = 196 - (p1 / 0.5f) * kGraphLinePixelSpan;  // y=122-196
 
-  M5.Lcd.drawPixel(x, y0, GREEN);
-  M5.Lcd.drawPixel(x, y1, CYAN);
+  M5.Lcd.fillRect(x, y0, kGraphLineWidth, kGraphLineWidth, GREEN);
+  M5.Lcd.fillRect(x, y1, kGraphLineWidth, kGraphLineWidth, CYAN);
 }
 
 void DisplayManager::drawPressureText(float p0, float p1) {
