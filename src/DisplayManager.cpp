@@ -2,6 +2,7 @@
 
 namespace {
 constexpr unsigned long kSdErrorBlinkHalfPeriodMs = 500;
+constexpr int kGraphPixelSpan = 77;
 }
 
 DisplayManager::DisplayManager() : last_displayed_v0(-1.0), last_displayed_v1(-1.0), 
@@ -27,7 +28,7 @@ void DisplayManager::drawLabels() {
   
   // CH0 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
-    int y = 99 - (i * 78 / 4);  // y=99,79,59,39,20
+    int y = 98 - (i * kGraphPixelSpan / 4);  // y=98,79,60,41,21
     float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
@@ -36,7 +37,7 @@ void DisplayManager::drawLabels() {
   
   // CH1 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
   for (int i = 0; i <= 4; i++) {
-    int y = 199 - (i * 78 / 4);  // y=199,179,159,139,120
+    int y = 198 - (i * kGraphPixelSpan / 4);  // y=198,179,160,141,121
     float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
     M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
     M5.Lcd.setCursor(2, y - 3);
@@ -61,8 +62,8 @@ void DisplayManager::drawOnePoint(int i, float p0, float p1, const float* ch0_bu
   M5.Lcd.fillRect(x, 121, 1, 78, BLACK);  // CH1 (y=121-198)
 
   // Draw pixels (0.5MPa = top, 0.0MPa = bottom, limited to inside area)
-  int y0 = 21 + 78 - (p0 / 0.5f) * 78;  // y=21-98 (inside border)
-  int y1 = 121 + 78 - (p1 / 0.5f) * 78; // y=121-198 (inside border)
+  int y0 = 98 - (p0 / 0.5f) * kGraphPixelSpan;   // y=21-98 (inside border)
+  int y1 = 198 - (p1 / 0.5f) * kGraphPixelSpan;  // y=121-198 (inside border)
 
   M5.Lcd.drawPixel(x, y0, GREEN);
   M5.Lcd.drawPixel(x, y1, CYAN);
