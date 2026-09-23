@@ -13,6 +13,7 @@ private:
   String log_filename;
   unsigned long session_start_time;
   bool recording;
+  bool write_error;
   TimeManager* timeManager;
   
 public:
@@ -22,10 +23,11 @@ public:
   bool init();
   bool isAvailable();
   bool isRecording();
+  bool hasWriteError();
   
-  void startRecording();
+  bool startRecording();
   void stopRecording();
-  void logData(float p0, float p1);
+  bool logData(float p0, float p1);
   
   // File management functions
   std::vector<String> getLogFileList();
@@ -35,6 +37,7 @@ public:
   
 private:
   String createLogFile();
+  String createUniqueFilename(const String& filename);
 };
 
 #endif // SD_MANAGER_H
