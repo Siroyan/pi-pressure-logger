@@ -37,16 +37,24 @@ public:
   bool isRecording();
   bool hasWriteError();
   
+  // started_atは起動後の単調増加ミリ秒。成功時は新しいCSVを開き、既存ファイルには追記しない。
+  // 戻り値はファイル作成の成否であり、後続のデータが保存済みであることは示さない。
   bool startRecording(uint64_t started_at);
+  // 残りのバッファを書き出してファイルを閉じる。書き込みエラーはhasWriteError()で確認する。
   void stopRecording();
+  // タイムスタンプを録画開始時からのミリ秒に変換してバッファへ追加する。
+  // trueはバッファへの追加成功であり、SDへの書き込み完了ではない。
   bool logData(const PressureSample& sample);
+  // 録画中のバッファをSDへ書き出す。書き込みエラー時は録画を停止してエラーを残す。
   bool flush();
   void poll();
   void writeSummary(uint32_t session, uint32_t dropped, uint32_t high_water);
   
-  // File management functions
+  // 一覧取得に失敗した場合も空の一覧を返す。
   std::vector<String> getLogFileList();
+  // filenameは先頭の「/」を含まない一覧上の名前。削除成功時だけキャッシュから除く。
   bool deleteFile(const String& filename);
+  // ファイルが見つからない場合や一覧取得に失敗した場合は-1を返す。
   long getFileSize(const String& filename);
   
 private:
@@ -58,4 +66,4 @@ private:
   bool writeBatch();
 };
 
-#endif // SD_MANAGER_H
+#endif

@@ -3,7 +3,7 @@
 #include "RecordingWriter.h"
 #include <freertos/semphr.h>
 
-// SD is owned by this worker after setup. UI requests never perform disk I/O.
+// 起動後のSD操作はこのタスクが担当し、画面側からは直接アクセスしない。
 class StorageService {
   struct Request { bool remove; char name[96]; };
   SDManager& sd;
@@ -29,12 +29,16 @@ public:
     return ready();
   }
   bool ready() const { return requests && resultMutex && busMutex; }
+  // SDと液晶の共有バスを待たずに確保する。成功時はendDisplay()で解放する。
   bool tryBeginDisplay() { return ready() && xSemaphoreTake(busMutex,0)==pdTRUE; }
   void endDisplay() { xSemaphoreGive(busMutex); }
+  // 戻り値は要求キューへの受付結果。実際の一覧はtakeResult()で取得する。
   bool requestList() {
     Request request{};
     return ready() && xQueueSend(requests,&request,0)==pdTRUE;
   }
+  // 戻り値は削除要求の受付結果であり、削除成功を示さない。
+  // ファイル名が長すぎる場合や要求キューが埋まっている場合もfalse。
   bool requestDelete(const String& name) {
     Request request{};
     request.remove=true;
@@ -42,6 +46,7 @@ public:
     memcpy(request.name,name.c_str(),name.length()+1);
     return ready() && xQueueSend(requests,&request,0)==pdTRUE;
   }
+  // 結果があれば一度だけ取り出してtrue。successは削除要求の成否で、一覧要求ではtrue。
   bool takeResult(std::vector<String>& files, std::vector<long>& sizes, bool& success) {
     if (!ready() || xSemaphoreTake(resultMutex,0)!=pdTRUE) return false;
     bool ready=resultReady;
@@ -56,10 +61,11 @@ public:
     if (!ready()) return;
     xSemaphoreTake(busMutex,portMAX_DELAY);
     RecordEvent event;
-    // Bound worker iterations too: allow the idle task to run under sustained load.
+    // 記録が続いてもアイドルタスクが動けるよう、1回に処理する件数を制限する。
     for (unsigned i=0; i<32 && samples.receive(event); ++i) writer.process(event);
     sd.poll();
     Request request;
+    // 未処理の記録を先に流し終え、録画中でなくなってから一覧取得や削除を行う。
     if (samples.empty() && !sd.isRecording() && requests && xQueueReceive(requests,&request,0)==pdTRUE) {
       bool success=!request.remove || sd.deleteFile(String(request.name));
       auto files=sd.getLogFileList();

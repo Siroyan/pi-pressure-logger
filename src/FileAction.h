@@ -21,6 +21,7 @@ public:
     state=Status::Busy; return true;
   }
   void complete(bool success) { if (state==Status::Busy) state=success ? Status::Success : Status::Failure; }
+  // 削除処理中は確認画面へ戻せないためfalseを返す。
   bool dismiss() {
     if (state==Status::Busy) return false;
     state=Status::None; selected=""; selectedSize=-1; return true;

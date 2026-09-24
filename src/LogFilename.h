@@ -7,8 +7,8 @@
 inline unsigned logNameGroup(const String& name) {
   const char* p=name.c_str();
   if (name.startsWith("pressure_log_boot_")) return 1;
-  if (name.length()>17 && p[17]=='-') return 2; // YYYY-... timestamp names
-  return 0; // Legacy uptime names have no reliable cross-boot date.
+  if (name.length()>17 && p[17]=='-') return 2; // 日時を含むファイル名。
+  return 0; // 旧形式の稼働時間ベースの名前では、起動をまたぐ日時を比較できない。
 }
 
 inline bool logNameNewer(const String& a, const String& b) {
@@ -32,7 +32,7 @@ inline bool logNameNewer(const String& a, const String& b) {
     }
   }
   if (*x!=*y) return *x>*y;
-  return a>b; // Stable tie-break for equal numeric values with different padding.
+  return a>b; // 数値が同じでもゼロ埋めが違う場合は、文字列で順序を確定する。
 }
 
 inline uint64_t logBootNumber(const String& name) {

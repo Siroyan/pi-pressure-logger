@@ -4,8 +4,8 @@ WiFiManager::WiFiManager(const char* wifi_ssid, const char* wifi_password)
   : wifi_connected(false), ssid(wifi_ssid), password(wifi_password) {}
 
 void WiFiManager::init() {
-  // The SDK retries on disconnect/failure events. An application timer calling
-  // reconnect() would force a disconnect even during association or DHCP.
+  // 切断後の再試行はSDKに任せる。アプリ側からreconnect()を呼ぶと、
+  // 接続処理中やIPアドレス取得中でも切断してしまう。
   WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
   wifi_connected = false;
@@ -14,7 +14,7 @@ void WiFiManager::init() {
 
 void WiFiManager::checkConnection() {
   const bool was_connected = wifi_connected.load();
-  // Refresh on every poll, including completion of an asynchronous reconnect.
+  // 非同期の再接続が完了した場合も拾えるよう、毎回接続状態を更新する。
   wifi_connected = WiFi.status() == WL_CONNECTED;
   if (wifi_connected && !was_connected) {
     Serial.printf("WiFi connected: IP=%s, gateway=%s, DNS1=%s, DNS2=%s\n",

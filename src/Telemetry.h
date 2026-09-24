@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <esp_timer.h>
 
+// 圧力はMPa、timestampは時刻同期に依存しない起動後ミリ秒。
 struct Telemetry {
   float p0=0, p1=0;
   uint64_t timestamp=0;

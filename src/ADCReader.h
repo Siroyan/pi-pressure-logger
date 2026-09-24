@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// ADS1015 register layout: TI SBAS473F, sections 7.5.4 and 8.
-// All I2C transfers are checked; no library conversion loop can wait forever.
+// ADS1015のレジスタ配置はTIの資料SBAS473Fの7.5.4節と8節に従う。
+// I²C通信の結果を毎回確認し、変換待ちが無期限に続かないようにする。
 class ADCReader {
   TwoWire& wire;
   bool initialized = false;
@@ -15,7 +15,7 @@ class ADCReader {
     if (expired()) return false;
     wire.beginTransmission(address);
     const size_t written = wire.write(reg);
-    // Always finish the transaction to release Wire's lock, even on a short write.
+    // 書き込みが短く終わっても、通信を終了してWireのロックを解放する。
     const uint8_t result = wire.endTransmission(true);
     if (written != 1 || result != 0 || expired()) return false;
     if (wire.requestFrom(address, static_cast<uint8_t>(2)) != 2 || expired()) return false;
@@ -25,7 +25,7 @@ class ADCReader {
     return true;
   }
   bool readChannel(uint8_t channel, int16_t& counts) {
-    // Single shot, AINx-GND, +/-6.144V, 3300SPS, comparator disabled.
+    // 単発変換、AINx-GND、±6.144 V、3300 SPS、比較器は無効。
     const uint16_t config = 0x8000 | ((channel + 4) << 12) | 0x0100 | 0x00C0 | 0x0003;
     if (expired()) return false;
     wire.beginTransmission(address);
@@ -43,7 +43,7 @@ class ADCReader {
     if (!(status & 0x8000)) return false;
     uint16_t raw;
     if (!readRegister(0, raw)) return false;
-    // The twelve signed result bits are left-justified in the register.
+    // 符号付き12ビットの変換結果はレジスタ内で左詰めされる。
     if (raw & 0x000F) return false;
     counts = static_cast<int16_t>(raw) / 16;
     return true;
@@ -51,14 +51,15 @@ class ADCReader {
 public:
   explicit ADCReader(TwoWire& bus = Wire) : wire(bus) {}
   bool init() {
-    // M5.begin() leaves I2C disabled by default. The former ADS library called
-    // Wire.begin() internally; the direct register reader must initialize it.
+    // M5.begin()後もI²Cは未初期化。以前のADSライブラリは内部で
+    // Wire.begin()を呼んでいたため、直接読む場合はここで初期化する。
     if (!initialized) initialized = wire.begin(21, 22);
     if (initialized) wire.setTimeOut(2);
     return initialized;
   }
+  // 2チャンネルを1組として読み、両方成功した場合だけMPa単位の出力を書き換える。
   bool readPair(float& p0, float& p1) {
-    // AcquisitionService throttles failed reads (including bus setup) to 1 Hz.
+    // 通信初期化を含む読み取り失敗の再試行はAcquisitionServiceが1秒間隔に抑える。
     if (!initialized && !init()) return false;
     started = micros();
     int16_t a, b;

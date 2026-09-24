@@ -12,8 +12,8 @@ struct RecordEvent {
   uint32_t dropped = 0, highWater = 0;
 };
 
-// Calls are serialized by the queue adapter. The sink reserves capacity for
-// boundaries, so a full sample queue cannot lose the closing Stop event.
+// 呼び出しはキュー側で直列化される。開始・終了通知のために空きを予約し、
+// サンプルでキューが詰まっても終了通知を失わない。
 class RecordingSession {
   uint32_t nextSession = 0;
   uint32_t activeSession = 0;

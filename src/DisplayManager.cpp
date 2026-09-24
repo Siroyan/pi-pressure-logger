@@ -24,13 +24,12 @@ void DisplayManager::drawLabels() {
   M5.Lcd.setCursor(30, 10);   M5.Lcd.print("CH0");
   M5.Lcd.setCursor(30, 110);  M5.Lcd.print("CH1");
 
-  M5.Lcd.drawRect(30, 20, 280, 80, WHITE);   // CH0
-  M5.Lcd.drawRect(30, 120, 280, 80, WHITE);  // CH1
+  M5.Lcd.drawRect(30, 20, 280, 80, WHITE);
+  M5.Lcd.drawRect(30, 120, 280, 80, WHITE);
   
-  // Scale marks and legends on left border
-  M5.Lcd.setTextColor(0x7BEF);  // Gray color
+  M5.Lcd.setTextColor(0x7BEF);
   
-  // Scale marks for both channels (0.0 to 0.5 MPa).
+  // 両チャンネルに0.0～0.5 MPaの目盛りを描く。
   for (int channel = 0; channel < 2; channel++) {
     for (int i = 0; i <= 4; i++) {
       int y = 97 + channel * 100 - (i * kGraphTickPixelSpan / 4);
@@ -41,9 +40,8 @@ void DisplayManager::drawLabels() {
     }
   }
   
-  M5.Lcd.setTextColor(WHITE);  // Reset to white
+  M5.Lcd.setTextColor(WHITE);
   
-  // Button instructions at bottom right
   drawButtonInstructions();
 }
 
@@ -94,19 +92,18 @@ void DisplayManager::drawPressureText(float p0, float p1) {
 void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
                                           bool sd_error,
                                           bool wifi_connected, bool mqtt_connected, bool network_enabled) {
-  M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
+  M5.Lcd.fillRect(30, 225, 150, 10, BLACK);
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
   
-  // ADC Status
   M5.Lcd.setTextColor(adc_available ? GREEN : RED);
   M5.Lcd.print(adc_available ? "ADC" : "ADC!");
 
   M5.Lcd.setTextColor(WHITE);
   M5.Lcd.print(" ");
 
-  // SD Status
   if (sd_error) {
+    // 録画中の赤表示と区別するため、書き込みエラーは赤と黄を交互に表示する。
     bool showRed = (millis() / kSdErrorBlinkHalfPeriodMs) % 2 == 0;
     M5.Lcd.setTextColor(showRed ? RED : YELLOW);
     M5.Lcd.print("SD:ERR");
@@ -128,14 +125,12 @@ void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available,
   
   if (!network_enabled) { M5.Lcd.print("OFFLINE"); return; }
 
-  // WiFi Status
   M5.Lcd.setTextColor(wifi_connected ? GREEN : RED);
   M5.Lcd.print(wifi_connected ? "WiFi" : "WiFi!");
   
   M5.Lcd.setTextColor(WHITE);
   M5.Lcd.print(" ");
   
-  // AWS IoT Status
   M5.Lcd.setTextColor(mqtt_connected ? GREEN : RED);
   M5.Lcd.print(mqtt_connected ? "AWS" : "AWS!");
   
@@ -147,11 +142,9 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
   M5.Lcd.setTextSize(1);
   M5.Lcd.setTextColor(WHITE);
   
-  // Title
   M5.Lcd.setCursor(10, 5);
   M5.Lcd.print("SD Card Files (" + String(files.size()) + " files)");
   
-  // Instructions at bottom right
   drawButtonInstructions("A:Down B:Delete C:Back");
   
   if (files.empty()) {
@@ -160,16 +153,13 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
     return;
   }
   
-  // Calculate visible range
   int start_index = scroll_offset;
   int max_end = start_index + max_files_per_page;
   int end_index = (max_end < (int)files.size()) ? max_end : (int)files.size();
   
-  // Draw file list
   for (int i = start_index; i < end_index; i++) {
     int y = 25 + (i - start_index) * 22;
     
-    // Highlight selected file
     if (i == selected_file_index) {
       M5.Lcd.fillRect(5, y - 2, 310, 18, BLUE);
       M5.Lcd.setTextColor(WHITE);
@@ -177,14 +167,13 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
       M5.Lcd.setTextColor(GREEN);
     }
     
-    // File name (truncated if too long)
+    // 保存時の接頭辞を省き、画面上のファイル名を短くする。
     String filename = files[i];
     if (filename.startsWith("pressure_log_")) filename = filename.substring(13);
     
     M5.Lcd.setCursor(10, y);
     M5.Lcd.print(filename);
     
-    // File size
     if (i < fileSizes.size() && fileSizes[i] >= 0) {
       String sizeStr;
       long size = fileSizes[i];
@@ -203,7 +192,6 @@ void DisplayManager::drawFileList(const std::vector<String>& files, const std::v
     M5.Lcd.setTextColor(WHITE);
   }
   
-  // Scroll indicator
   if (files.size() > max_files_per_page) {
     M5.Lcd.setCursor(290, 200);
     M5.Lcd.print(String(selected_file_index + 1) + "/" + String(files.size()));
@@ -236,14 +224,12 @@ void DisplayManager::navigateFileList(int direction, int total_files) {
   
   selected_file_index += direction;
   
-  // Wrap around
   if (selected_file_index < 0) {
     selected_file_index = total_files - 1;
   } else if (selected_file_index >= total_files) {
     selected_file_index = 0;
   }
   
-  // Update scroll offset
   if (selected_file_index < scroll_offset) {
     scroll_offset = selected_file_index;
   } else if (selected_file_index >= scroll_offset + max_files_per_page) {

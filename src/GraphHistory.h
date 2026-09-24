@@ -4,10 +4,10 @@
 
 class GraphHistory {
 public:
-  // 138 disjoint columns of two pixels; frame stays at x=30..309.
+  // 2画素幅の列を138本使い、外枠の位置はx=30～309のままにする。
   static constexpr unsigned columns=138;
   static constexpr uint64_t windowMs=20000;
-  static constexpr unsigned gapColumns=7; // ceil(1000ms * 138 / 20000ms)
+  static constexpr unsigned gapColumns=7; // 20秒の表示範囲で約1秒分を空白にする。
   struct Column {
     bool valid=false, dirty=false;
     uint64_t tick=0;
@@ -22,6 +22,7 @@ private:
   }
 public:
   void reset() { for (auto& c:data) c=Column{}; initialized=false; head=0; }
+  // msは起動後の単調増加ミリ秒。新しいサンプルがなくても古い列を無効化する。
   void advance(uint64_t ms) {
     uint64_t tick=bucket(ms);
     if (initialized && tick<=head) return;
@@ -30,10 +31,11 @@ public:
       if (c.valid && head-c.tick>=columns-gapColumns) { c.valid=false; c.dirty=true; }
     }
   }
+  // 同じ時間列に入るサンプルの最小値と最大値を残し、短いピークを保持する。
   void add(float p0,float p1,uint64_t ms) {
     advance(ms);
     uint64_t tick=bucket(ms);
-    if (head-tick>=columns-gapColumns) return; // Too old to be in the visible window.
+    if (head-tick>=columns-gapColumns) return; // 表示範囲と空白帯から外れた古い値は描かない。
     Column& c=data[tick%columns];
     if (!c.valid || c.tick!=tick) {
       c.valid=c.dirty=true; c.tick=tick;

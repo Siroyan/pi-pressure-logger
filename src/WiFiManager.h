@@ -19,4 +19,4 @@ public:
 
 };
 
-#endif // WIFI_MANAGER_H
+#endif

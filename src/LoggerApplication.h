@@ -6,8 +6,8 @@
 #include "StorageService.h"
 #include "DisplayManager.h"
 
-// Stable lifetime owner. Each task receives this object through its parameter;
-// only tick() owns screen, buttons, navigation and user-visible state transitions.
+// 実機では実行中ずっと存続するアプリ本体。各タスクには引数としてこのオブジェクトを渡す。
+// 起動後の画面描画、ボタン入力、画面遷移はtick()が担当する。
 class LoggerApplication {
   static constexpr int interval_ms=10, sample_queue_size=512, max_samples_per_loop=4;
   static constexpr int min_press_duration=50;
@@ -31,6 +31,8 @@ class LoggerApplication {
   static void storageTask(void*);
   static void networkTask(void*);
 public:
+  // 機器・キューを初期化し、記録・計測・通信タスクを起動する。
+  // 一部の起動に失敗しても画面側は動かし、失敗理由を表示する。
   void setup();
   void tick();
   void sample() { acquisitionService.step(); }

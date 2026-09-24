@@ -11,8 +11,8 @@ void SDManager::setTimeManager(TimeManager* tm) {
 }
 
 bool SDManager::init() {
-  // M5Stack Basic SD CS is GPIO4; the ESP32 variant default SS is GPIO5.
-  // Explicit settings are essential after SD.end() during recovery.
+  // M5Stack BasicのSD選択端子はGPIO4で、ESP32基板の既定値GPIO5とは異なる。
+  // SD.end()後の再マウントでも同じ端子を明示する。
   cache_valid = false;
   if (!SD.begin(4, SPI, 40000000)) {
     Serial.println("SD Card Mount Failed");
@@ -47,18 +47,18 @@ bool SDManager::hasWriteError() {
 String SDManager::createLogFile() {
   String filename;
   
-  // Use NTP time for filename if available
+  // 時計が有効なら、その日時をファイル名に使う。
   if (timeManager && timeManager->isTimeSynced()) {
     String timeString = timeManager->getFormattedTimeString();
     if (timeString.length() > 0) {
       filename = "/pressure_log_" + timeString + ".csv";
     } else {
-      // If getFormattedTimeString returns empty, fall back to millis
+      // 日時を文字列にできない場合は、起動番号とセッション開始時刻に切り替える。
       Serial.println("Failed to get formatted time, using millis fallback");
       filename = uptimeFilename();
     }
   } else {
-    // Fallback to millis-based naming
+    // 時計が使えない場合も、起動番号とセッション開始時刻で名前を付ける。
     Serial.println("NTP time not available, using millis-based filename");
     filename = uptimeFilename();
   }
@@ -73,10 +73,9 @@ String SDManager::createLogFile() {
   cache_valid = false;
   File file = SD.open(filename.c_str(), FILE_WRITE);
   if (file) {
-    // Write CSV header with timestamp info
     bool complete = writeLine(file, "Timestamp(ms),CH0(MPa),CH1(MPa)");
     
-    // Add a comment with session start time if NTP is available
+    // 時計が有効なら、ファイル作成時の日時も記録する。
     if (complete && timeManager && timeManager->isTimeSynced()) {
       complete = writeLine(file, "# File created (wall clock): " + timeManager->getCurrentTimeString());
     }
@@ -123,8 +122,8 @@ bool SDManager::startRecording(uint64_t started_at) {
   batch_size = 0;
   session_start_time = started_at;
 
-  // A new user-requested session is the only recovery attempt. Keep the
-  // failed file for diagnosis; never append to it after remounting.
+  // SD障害の復旧はユーザーが録画を再開したときだけ試す。
+  // 障害が起きたファイルは調査用に残し、再マウント後も追記しない。
   if (write_error || !sd_available) {
     SD.end();
     init();

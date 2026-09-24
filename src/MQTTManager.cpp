@@ -19,7 +19,7 @@ bool MQTTManager::init() {
   wifiClient->setCertificate(cert);
   wifiClient->setPrivateKey(key);
   wifiClient->setHandshakeTimeout(tlsHandshakeSeconds);
-  wifiClient->setTimeout(runningIoSeconds); // This pinned SDK takes seconds.
+  wifiClient->setTimeout(runningIoSeconds); // この固定版SDKでは秒単位で指定する。
   client.setServer(endpoint,port);
   client.setSocketTimeout(runningIoSeconds);
   bool ready=client.setBufferSize(512);
@@ -57,8 +57,8 @@ void MQTTManager::loop(bool network_ready) {
     updateConnected(false);
     if (connectAttempted && static_cast<uint32_t>(millis()-lastConnectAttempt)<5000) return;
     connectAttempted=true;
-    // Connection setup needs more time than established-session I/O. This
-    // SDK also uses setTimeout() for TCP connect, so restore it on every retry.
+    // 接続時は通常の通信より長い猶予が要る。このSDKではTCP接続にも
+    // setTimeout()を使うため、試行後は通常時の値へ戻す。
     wifiClient->setTimeout(tcpConnectSeconds);
     client.setSocketTimeout(mqttConnectSeconds);
     const uint32_t connectStarted = millis();
@@ -80,7 +80,7 @@ void MQTTManager::loop(bool network_ready) {
                     WiFi.dnsIP(1).toString().c_str());
       char error[128] = {};
       const int code = wifiClient->lastError(error, sizeof(error));
-      // The SDK does not reset this value when hostname resolution fails.
+      // 名前解決に失敗してもSDKがこのエラー値を消さないことがある。
       if (code) Serial.printf("Last TLS error (may be from an earlier attempt): %d (%s)\n", code, error);
       if (client.state() == -2)
         Serial.println("Transport connection failed before MQTT. If 'DNS Failed' appears above, check DNS/network reachability first.");
@@ -97,14 +97,14 @@ void MQTTManager::loop(bool network_ready) {
   bool have=pending;
   if (have) { value=latest; pending=false; }
   portEXIT_CRITICAL(&mux);
-  // Latest-value delivery: no history replay, no retry of an old failed sample.
+  // 最新値だけを送り、過去のデータや送信失敗した古い値は再送しない。
   const uint64_t now=static_cast<uint64_t>(esp_timer_get_time())/1000;
   if (!have || !value.session || value.timestamp>now || now-value.timestamp>1000) return;
   const String payload=telemetryPayload(value,thing);
   bool success=client.publish(topic,payload.c_str());
   bool connected=client.connected();
   publishAttempted=true;
-  lastPublishAttempt=millis(); // Throttle from completion, including a stalled/failed send.
+  lastPublishAttempt=millis(); // 送信が遅延・失敗した場合も、完了時刻から再送間隔を測る。
   portENTER_CRITICAL(&mux);
   ++status.attempts; status.lastAttempt=lastPublishAttempt;
   if (success) { ++status.successes; status.lastSuccess=lastPublishAttempt; }

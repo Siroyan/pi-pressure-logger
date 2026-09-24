@@ -2,7 +2,7 @@
 #include "RecordingSession.h"
 #include "SDManager.h"
 
-// Consumed in FIFO order, independent of which UI screen is currently shown.
+// 表示中の画面に関係なく、記録イベントを到着順に処理する。
 class RecordingWriter {
   SDManager& sd;
   uint32_t activeSession = 0;
@@ -19,7 +19,7 @@ public:
       activeSession = 0;
     } else if (event.kind == RecordKind::Sample && activeSession && event.session == activeSession) {
       sd.logData(event.sample);
-      return true;  // The network session stays active even after an SD failure.
+      return true;  // SDへの書き込み失敗後も通信セッションは継続する。
     }
     return false;
   }

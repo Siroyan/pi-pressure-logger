@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
-// Only the short FIFO/mailbox operations run under this lock. No peripheral I/O.
+// ロック中は短いキュー操作だけを行い、周辺機器にはアクセスしない。
 class RecordingQueue {
   QueueHandle_t queue = nullptr;
   QueueHandle_t displayQueue = nullptr;
@@ -30,7 +30,7 @@ class RecordingQueue {
       if (depth > sessionHighWater) sessionHighWater = depth;
       if (depth > highWater) highWater = depth;
     }
-    // Independent consumers: SD stalls cannot hold up the screen or cloud.
+    // 表示と通信は独立した受け手なので、SDの停滞に巻き込まれない。
     if (event.kind == RecordKind::Sample) xQueueSend(displayQueue, &event.sample, 0);
     xQueueOverwrite(networkQueue, &event);
     return ok;
@@ -47,18 +47,23 @@ public:
     networkQueue = xQueueCreate(1, sizeof(RecordEvent));
     return queue && displayQueue && networkQueue;
   }
+  // 開始通知を記録キューへ入れられた場合だけtrue。SDファイルの作成完了は待たない。
   bool start() {
     portENTER_CRITICAL(&mux);
     bool ok = session.start(acquisitionMillis(), [this](const RecordEvent& e, unsigned n) { return enqueue(e,n); });
     portEXIT_CRITICAL(&mux);
     return ok;
   }
+  // 終了通知を記録キューへ入れる。録画していない場合もtrueを返す。
+  // trueでもSDへの書き出し完了を意味しない。
   bool stop() {
     portENTER_CRITICAL(&mux);
     bool ok = session.stop(acquisitionMillis(), [this](const RecordEvent& e, unsigned n) { return enqueue(e,n); });
     portEXIT_CRITICAL(&mux);
     return ok;
   }
+  // 圧力の単位はMPa。falseは記録キューへの投入失敗を示す。
+  // 表示キューと通信キューへの配信は独立して試み、trueでも配信成功は保証しない。
   bool submit(float p0, float p1) {
     portENTER_CRITICAL(&mux);
     bool ok = session.sample({p0,p1,acquisitionMillis()}, [this](const RecordEvent& e, unsigned n) { return enqueue(e,n); });
@@ -67,6 +72,7 @@ public:
   }
   bool receive(RecordEvent& event) { return queue && xQueueReceive(queue, &event, 0) == pdTRUE; }
   bool receiveDisplay(PressureSample& sample) { return displayQueue && xQueueReceive(displayQueue, &sample, 0) == pdTRUE; }
+  // 通信キューは1件分だけで、未処理の値は新しい通知で上書きされる。
   bool receiveNetwork(RecordEvent& event) { return networkQueue && xQueueReceive(networkQueue, &event, 0) == pdTRUE; }
   bool empty() const { return !queue || uxQueueMessagesWaiting(queue) == 0; }
   uint32_t droppedSamples() const { return dropped.load(); }

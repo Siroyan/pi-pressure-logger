@@ -16,7 +16,7 @@ bool TimeManager::syncTime() {
 
 void TimeManager::poll() {
   bool connected = WiFi.status() == WL_CONNECTED;
-  bool synced = isTimeSynced();  // Also notices late SNTP success after any timeout.
+  bool synced = isTimeSynced();  // 同期要求後に遅れて時刻が確定した場合も検知する。
   if (connected && !synced && (!was_connected || !requested ||
       static_cast<uint32_t>(millis() - last_attempt) >= 30000)) syncTime();
   was_connected = connected;

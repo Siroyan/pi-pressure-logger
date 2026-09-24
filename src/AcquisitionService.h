@@ -12,6 +12,7 @@ public:
   explicit AcquisitionService(RecordingQueue& output, TwoWire& wire = Wire) : reader(wire), queue(output) {}
   void init() { reader.init(); }
   bool isAvailable() const { return available.load(); }
+  // 読み取り失敗時は録画終了を通知し、次の読み取りを1秒後まで待つ。
   void step() {
     if (retryPending && static_cast<uint32_t>(millis() - failedAt) < 1000) return;
     float p0, p1;

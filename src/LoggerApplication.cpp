@@ -70,7 +70,7 @@ void LoggerApplication::samplingTask(void* parameter) {
     vTaskDelayUntil(&last_wake_time, sample_period);
 
     app.sample();
-    // Never issue a burst of catch-up conversions after a timeout or preemption.
+    // タイムアウトやタスクの中断後に、遅れた分の変換を連続実行しない。
     if (xTaskGetTickCount() - last_wake_time >= sample_period) last_wake_time = xTaskGetTickCount();
   }
 }
@@ -84,24 +84,22 @@ void LoggerApplication::networkTask(void* parameter) {
 }
 
 void LoggerApplication::setup() {
-  M5.begin(true,false); // SDManager owns the SD mount and recovery settings.
+  M5.begin(true,false); // SDのマウントと復旧時の設定はSDManagerが担当する。
 
   acquisitionService.init();
 
-  // Initialize managers
   displayManager.init();
   sdManager.init();
   networkService.init();
 
-  // Connect state manager to other managers
+  // ログファイル名に使う時計をSDManagerへ渡す。
   sdManager.setTimeManager(networkService.timeSource());
 
-  // Draw initial status
   displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                       sdManager.hasWriteError(),
                                       networkService.wifiConnected(), networkService.mqttConnected(), networkService.enabled());
 
-  // Start storage before acquisition so samples always have a consumer.
+  // サンプルの受け手を先に用意するため、記録タスクを計測タスクより先に起動する。
   bool samplingTaskReady = false;
   if (!recordingQueue.init(sample_queue_size)) {
     startupError = "Sample queues unavailable";
@@ -114,7 +112,7 @@ void LoggerApplication::setup() {
     samplingTaskReady = xTaskCreatePinnedToCore(samplingTask,"pressure-sampling",4096,this,3,nullptr,1)==pdPASS;
     if (!samplingTaskReady) startupError = "Sampling task unavailable";
   }
-  // Network startup is independent; retain the earlier storage/acquisition error.
+  // 通信タスクは独立して起動する。記録・計測側の起動エラーがあれば優先して残す。
   const char* networkError = nullptr;
   if (!networkService.ready()) {
     networkError = "MQTT resources unavailable";
@@ -136,7 +134,6 @@ void LoggerApplication::tick() {
     stateManager.transitionToStandby();
     screenDirty = true;
   }
-  // Handle user input
   handleButtonInput();
 
   if (storageService.takeResult(listedFiles, listedSizes, fileOperationSuccess)) {
@@ -145,8 +142,7 @@ void LoggerApplication::tick() {
     displayManager.resetFileListNavigation();
     screenDirty = true;
   }
-  // SD and LCD share SPI on the M5Stack. Skip drawing rather than blocking
-  // button polling on the SD driver's bus transaction.
+  // SDと液晶はSPIを共有する。SD処理中は描画を見送り、ボタン入力を待たせない。
   if (!storageTaskReady || storageService.tryBeginDisplay()) {
     if (stateManager.getCurrentState() == FILE_LIST) {
       if (screenDirty) {
