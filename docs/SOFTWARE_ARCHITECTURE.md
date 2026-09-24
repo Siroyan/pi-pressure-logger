@@ -1,6 +1,6 @@
 # ソフトウェアアーキテクチャ
 
-本書は`dev`の`2751286`（2026-09-24確認）を基準に、実装の構成と変更時の入口を説明する。図はMermaid形式で、GitHubのMarkdownプレビューで表示できる。
+本書は`dev`の`2751286`を基準に、起動処理を`LoggerApplication::setup()`へ集約したリファクタリングを反映している（2026-09-24確認）。図はMermaid形式で、GitHubのMarkdownプレビューで表示できる。
 
 操作・配線は[README](../README.md)、AWSの設定は[AWS_SETUP](../AWS_SETUP.md)、検証手順は[LOCAL_TESTS](LOCAL_TESTS.md)を参照する。
 
@@ -92,7 +92,6 @@ sequenceDiagram
     participant ADC as AcquisitionService
     participant SD as SDManager
     participant Net as NetworkService
-    participant Start as RuntimeStartup
     participant Worker as 通信タスク
     participant AWS as AWS IoT Core
     Boot->>Boot: M5.begin(true, false)
@@ -102,10 +101,10 @@ sequenceDiagram
     Boot->>Net: init
     Net->>Net: Wi-Fi接続開始・時刻確認・MQTT設定
     Note over Boot,Net: Wi-Fi・NTPの完了を待つループは置かない
-    Boot->>Start: キュー・保存資源を確保
-    Start->>Start: 保存タスク → 取得タスクを起動
+    Boot->>Boot: キュー・保存資源を確保
+    Boot->>Boot: 保存タスク → 取得タスクを起動
     opt online構成かつMQTT資源確保成功
-        Start->>Worker: 通信タスクを起動
+        Boot->>Worker: 通信タスクを起動
         loop 通信処理後に10ms待機
             Worker->>Net: step
             Net->>Net: Wi-Fi状態確認・非同期NTP同期の確認
@@ -122,6 +121,8 @@ sequenceDiagram
 `M5.begin(true, false)`の第2引数はSD自動初期化の無効化であり、SDの設定と再マウントは`SDManager`に集約する。I²Cは`ADCReader`で明示的に初期化する。起動直後のADC表示は、取得タスクが正常なペアを初めて取得するまで異常表示になり得る。
 
 起動順は保存側が取得側より先。保存資源・保存タスクが起動できなければ取得タスクを起動せず、RECへの遷移も抑止する。通信系だけの起動失敗では取得・ローカル記録を利用できる。
+
+この判断は`LoggerApplication::setup()`内の`if`文で直接行う。保存タスクの起動成否はメンバー`storageTaskReady`、表示する起動エラーは`startupError`へ保持する。取得タスクの起動成否はローカル変数から`StateManager::setRecordingReady()`へ渡す。通信の起動は取得・保存側の失敗にかかわらず判断し、複数の失敗がある場合は先に検出した取得・保存側のエラーを優先して表示する。
 
 ### 3.2 記録開始・取得・保存・送信・停止
 
@@ -261,7 +262,7 @@ SDとLCDはSPIを共有する。`StorageService::busMutex`を保存タスクが�
 | Wi-Fi接続・IP取得が遅い | アプリから強制再接続しない。SDKのイベントに基づく自動再接続を利用 | `WiFiManager` |
 | NTP未同期 | SDは起動グループ・起動後時刻のファイル名を使い、AWS接続は待つ | `TimeManager`、`SDManager` |
 | DNS／TCP／TLS／MQTT接続失敗 | 接続試行の完了から5秒空けて再試行。記録処理は継続 | `MQTTManager` |
-| キュー・タスク作成失敗 | 起動結果を画面へ表示。取得系が起動できない場合はRECを拒否 | `RuntimeStartup`、`LoggerApplication` |
+| キュー・タスク作成失敗 | 起動結果を画面へ表示。取得系が起動できない場合はRECを拒否 | `LoggerApplication::setup()` |
 
 ADCはアドレス`0x48`、SDA=21、SCL=22、ADS1015の±6.144V・3300SPS設定。ペア読取期限8ms、Wireの転送タイムアウト2msを設けるが、スケジューリングも含めた厳密な実時間上限ではない。
 
@@ -283,7 +284,6 @@ MQTTはQoS 0で、送信試行完了から500ms以上空けて最新値を送る
 | --- | --- |
 | [main.cpp](../src/main.cpp) | アプリインスタンスの寿命を確保し、Arduinoの入口を委譲 |
 | [LoggerApplication.h](../src/LoggerApplication.h) / [LoggerApplication.cpp](../src/LoggerApplication.cpp) | サービスの所有、起動順、タスク生成、ボタン処理、UI更新、周期・キュー容量の定義 |
-| [RuntimeStartup.h](../src/RuntimeStartup.h) | キュー・保存資源・タスク作成の依存関係と起動エラーの集約 |
 | [StateManager.h](../src/StateManager.h) / [StateManager.cpp](../src/StateManager.cpp) | `SystemState`と記録開始・停止の境界要求 |
 | [FileAction.h](../src/FileAction.h) | 削除確認・実行中・結果の状態、削除対象の固定 |
 | [ADCReader.h](../src/ADCReader.h) | I²C初期化、ADS1015レジスタ操作、成否・期限検査、MPa換算 |
@@ -328,7 +328,7 @@ MQTTはQoS 0で、送信試行完了から500ms以上空けて最新値を送る
 | --- | --- |
 | `Test.h` / `main.cpp` | テスト登録・アサーション・実行と集計 |
 | `adc_test.cpp` | I²C初期化、変換・期限、転送失敗、停止と復旧 |
-| `application_test.cpp` | 実ボタン入力から記録・削除までの統合、SPI使用中の停止、起動失敗 |
+| `application_test.cpp` | 実ボタン入力から記録・削除までの統合、SPI使用中の停止、setupの資源・タスク作成失敗、起動順、通信失敗時のローカル記録 |
 | `display_test.cpp` | 波形の端点・ピーク・欠測・空白帯、数値再描画、削除確認 |
 | `file_cache_test.cpp` | ファイル名順序、起動番号、一覧キャッシュ、削除失敗 |
 | `mqtt_test.cpp` | 接続遅延・期限・再試行、最新値・鮮度、送信結果と診断ログ |
@@ -337,7 +337,7 @@ MQTTはQoS 0で、送信試行完了から500ms以上空けて最新値を送る
 | `pipeline_test.cpp` | 保存・表示・通信の独立性、バッチ書込、一覧・削除要求の順序 |
 | `session_test.cpp` | Start／Stopの順序、予約枠、停止直後の再開始 |
 | `sd_mount_test.cpp` | 初回・障害後のSD CSピン |
-| `startup_test.cpp` | キュー・mutex・タスク・MQTTバッファの確保失敗 |
+| `startup_test.cpp` | キューの部分確保失敗とMQTTバッファ確保失敗時の各クラスの安全性 |
 | `storage_test.cpp` | 書込長・flush・保存値・取得時刻・CSV・MQTT形式 |
 | `rtc_clock_fake.cpp` | OS時計への依存を置き換えるRTC境界 |
 
@@ -359,7 +359,7 @@ MQTTはQoS 0で、送信試行完了から500ms以上空けて最新値を送る
 | CSV・ファイル名・SD性能 | `SDManager`、`LogFilename`、`RecordingWriter` | storage、file_cache、sd_mount、pipeline |
 | 波形範囲・時間軸 | `DisplayManager`、`GraphHistory` | display |
 | MQTT項目・送信周期 | `Telemetry`、`MQTTManager`、`NetworkService` | mqtt、storage、network_mode |
-| Wi-Fi・時刻・起動条件 | `WiFiManager`、`TimeManager`、`RtcClock`、`RuntimeStartup` | network、startup、application |
+| Wi-Fi・時刻・起動条件 | `WiFiManager`、`TimeManager`、`RtcClock`、`LoggerApplication::setup()` | network、startup、application |
 
 変更時は、UIから同期SD／通信I/Oを呼ばないこと、保存の境界をFIFOに残すこと、波形の制限を保存・送信値へ持ち込まないことを保つ。キュー容量や取得周期を変える場合は、欠落数・保存処理能力・表示遅延も確認する。通信設定を変える場合は、接続前の待ち時間と接続後の通常通信を区別する。
 

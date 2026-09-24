@@ -27,7 +27,7 @@
 | R2-B04 | 画面初期化時に数値キャッシュを無効化 | `display_test.cpp`の一定入力での連続画面復帰 |
 | R2-B05 | 取得時刻で列を決め、列内の最小／最大を保持。欠測・移動空白帯・2px描画を維持 | `display_test.cpp`の短いピーク・欠測・停止・古い滞留値・端点 |
 | R2-B06 | 完全な名前・サイズの確認、取消、非同期削除、成功／失敗表示 | `display_test.cpp`の対象固定と失敗表示、`application_test.cpp`の実ボタン列、`file_cache_test.cpp`の削除失敗 |
-| R2-B07 | キュー・保存用mutex・各タスク・MQTTバッファの失敗を確認し、RECを抑止 | `startup_test.cpp`の部分確保失敗・タスク失敗、`application_test.cpp`の画面利用可否 |
+| R2-B07 | キュー・保存用mutex・各タスク・MQTTバッファの失敗を確認し、RECを抑止 | `startup_test.cpp`の部分確保・MQTT資源失敗、`application_test.cpp`でsetup経由の資源・タスク失敗と画面利用可否 |
 | R2-B08 | 通信タスクが送信判定と結果を管理。最新値のみ、試行間隔と成功時刻を分離 | `mqtt_test.cpp`の失敗・送信停滞中200件投入・接続遅延・停止・期限超過・周回 |
 | R2-B09 | ローカルゲート、ハードウェア境界fake、ASan/UBSan、非秘密ビルド、依存バージョン固定 | `scripts/check.sh`、`requirements-dev.txt`、`platformio.ini` |
 | R2-C01 | 名前・サイズをキャッシュ、数値順で比較、未同期名へ起動グループを追加 | `file_cache_test.cpp`の503件・10回再参照で追加open 0回、再起動／再マウント |

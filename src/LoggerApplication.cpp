@@ -2,7 +2,7 @@
 #include <freertos/task.h>
 
 void LoggerApplication::requestFileList() {
-  fileRequestPending = runtime.storage && storageService.requestList();
+  fileRequestPending = storageTaskReady && storageService.requestList();
   fileOperationSuccess = fileRequestPending;
   screenDirty = true;
 }
@@ -11,7 +11,7 @@ void LoggerApplication::handleButtonInput() {
   if (stateManager.getCurrentState() == FILE_LIST && fileAction.status() != FileAction::Status::None) {
     if (M5.BtnC.wasPressed() && fileAction.dismiss()) requestFileList();
     else if (M5.BtnB.wasPressed() && fileAction.confirm()) {
-      fileRequestPending = runtime.storage && storageService.requestDelete(fileAction.filename());
+      fileRequestPending = storageTaskReady && storageService.requestDelete(fileAction.filename());
       if (!fileRequestPending) fileAction.complete(false);
       screenDirty = true;
     }
@@ -101,21 +101,30 @@ void LoggerApplication::setup() {
                                       sdManager.hasWriteError(),
                                       networkService.wifiConnected(), networkService.mqttConnected(), networkService.enabled());
 
-  runtime = startRuntime(true,networkService.ready(), [this] {
-    return recordingQueue.init(sample_queue_size);
-  }, [this] {
-    return storageService.init();
-  }, [this] {
-    return xTaskCreatePinnedToCore(storageTask,"pressure-storage",6144,this,1,nullptr,1)==pdPASS;
-  }, [this] {
-    return xTaskCreatePinnedToCore(samplingTask,"pressure-sampling",4096,this,3,nullptr,1)==pdPASS;
-  }, [this] {
-    if (!networkService.enabled()) return true;
-    return xTaskCreatePinnedToCore(networkTask,"network-maintenance",8192,this,tskIDLE_PRIORITY,nullptr,0)==pdPASS;
-  });
-  runtime.network = networkService.enabled() && runtime.network;
-  stateManager.setRecordingReady(runtime.acquisition);
-  if (runtime.error) Serial.println(runtime.error);
+  // Start storage before acquisition so samples always have a consumer.
+  bool samplingTaskReady = false;
+  if (!recordingQueue.init(sample_queue_size)) {
+    startupError = "Sample queues unavailable";
+  } else if (!storageService.init()) {
+    startupError = "Storage resources unavailable";
+  } else if (xTaskCreatePinnedToCore(storageTask,"pressure-storage",6144,this,1,nullptr,1)!=pdPASS) {
+    startupError = "Storage task unavailable";
+  } else {
+    storageTaskReady = true;
+    samplingTaskReady = xTaskCreatePinnedToCore(samplingTask,"pressure-sampling",4096,this,3,nullptr,1)==pdPASS;
+    if (!samplingTaskReady) startupError = "Sampling task unavailable";
+  }
+  // Network startup is independent; retain the earlier storage/acquisition error.
+  const char* networkError = nullptr;
+  if (!networkService.ready()) {
+    networkError = "MQTT resources unavailable";
+  } else if (networkService.enabled() &&
+             xTaskCreatePinnedToCore(networkTask,"network-maintenance",8192,this,tskIDLE_PRIORITY,nullptr,0)!=pdPASS) {
+    networkError = "Network task unavailable";
+  }
+  if (!startupError) startupError = networkError;
+  stateManager.setRecordingReady(samplingTaskReady);
+  if (startupError) Serial.println(startupError);
 
 }
 
@@ -138,7 +147,7 @@ void LoggerApplication::tick() {
   }
   // SD and LCD share SPI on the M5Stack. Skip drawing rather than blocking
   // button polling on the SD driver's bus transaction.
-  if (!runtime.storage || storageService.tryBeginDisplay()) {
+  if (!storageTaskReady || storageService.tryBeginDisplay()) {
     if (stateManager.getCurrentState() == FILE_LIST) {
       if (screenDirty) {
         if (fileAction.status()!=FileAction::Status::None) {
@@ -157,7 +166,7 @@ void LoggerApplication::tick() {
       if (now - last_status_update >= 500) {
         last_status_update = now;
         M5.Lcd.fillRect(30,200,280,9,BLACK);
-        if (runtime.error) { M5.Lcd.setCursor(30,200); M5.Lcd.print(runtime.error); }
+        if (startupError) { M5.Lcd.setCursor(30,200); M5.Lcd.print(startupError); }
         displayManager.drawConnectionStatus(acquisitionService.isAvailable(), sdManager.isAvailable(), sdManager.isRecording(),
                                             sdManager.hasWriteError(),
                                             networkService.wifiConnected(), networkService.mqttConnected(), networkService.enabled());
@@ -170,7 +179,7 @@ void LoggerApplication::tick() {
         displayManager.drawPressureText(sample.p0,sample.p1);
       }
     }
-    if (runtime.storage) storageService.endDisplay();
+    if (storageTaskReady) storageService.endDisplay();
   }
   if (now - last_drop_report >= 5000) {
     last_drop_report = now;

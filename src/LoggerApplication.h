@@ -5,7 +5,6 @@
 #include "NetworkService.h"
 #include "StorageService.h"
 #include "DisplayManager.h"
-#include "RuntimeStartup.h"
 
 // Stable lifetime owner. Each task receives this object through its parameter;
 // only tick() owns screen, buttons, navigation and user-visible state transitions.
@@ -19,7 +18,8 @@ class LoggerApplication {
   StorageService storageService{sdManager,recordingQueue};
   DisplayManager displayManager;
   StateManager stateManager{recordingQueue};
-  RuntimeStartup runtime;
+  bool storageTaskReady=false;
+  const char* startupError=nullptr;
   FileAction fileAction;
   std::vector<String> listedFiles;
   std::vector<long> listedSizes;
