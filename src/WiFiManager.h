@@ -16,7 +16,6 @@ public:
   void init();
   void checkConnection();
   bool isConnected();
-  IPAddress getLocalIP();
 
 };
 

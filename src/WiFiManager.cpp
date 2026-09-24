@@ -26,4 +26,3 @@ void WiFiManager::checkConnection() {
 }
 
 bool WiFiManager::isConnected() { return wifi_connected.load(); }
-IPAddress WiFiManager::getLocalIP() { return WiFi.localIP(); }

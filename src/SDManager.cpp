@@ -259,25 +259,22 @@ std::vector<String> SDManager::getLogFileList() {
 }
 
 bool SDManager::deleteFile(const String& filename) {
-  if (!sd_available) {
-    return false;
-  }
+  if (!sd_available) return false;
   
   String fullPath = "/" + filename;
-  if (SD.exists(fullPath.c_str())) {
-    bool result = SD.remove(fullPath.c_str());
-    if (result) {
-      file_cache.erase(std::remove_if(file_cache.begin(),file_cache.end(),
-        [&](const LogEntry& entry) { return entry.name==filename; }),file_cache.end());
-      Serial.println("Deleted file: " + filename);
-    } else {
-      Serial.println("Failed to delete file: " + filename);
-    }
-    return result;
-  } else {
+  if (!SD.exists(fullPath.c_str())) {
     Serial.println("File not found: " + filename);
     return false;
   }
+  bool result = SD.remove(fullPath.c_str());
+  if (result) {
+    file_cache.erase(std::remove_if(file_cache.begin(),file_cache.end(),
+      [&](const LogEntry& entry) { return entry.name==filename; }),file_cache.end());
+    Serial.println("Deleted file: " + filename);
+  } else {
+    Serial.println("Failed to delete file: " + filename);
+  }
+  return result;
 }
 
 long SDManager::getFileSize(const String& filename) {

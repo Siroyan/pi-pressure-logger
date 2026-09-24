@@ -43,5 +43,3 @@ String TimeManager::getFormattedTimeString() {
   strftime(buffer, sizeof(buffer), "%Y-%m-%d-%H-%M-%S", &info);
   return String(buffer);
 }
-
-void TimeManager::printCurrentTime() { Serial.println(getCurrentTimeString()); }

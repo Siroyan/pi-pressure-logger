@@ -30,22 +30,15 @@ void DisplayManager::drawLabels() {
   // Scale marks and legends on left border
   M5.Lcd.setTextColor(0x7BEF);  // Gray color
   
-  // CH0 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
-  for (int i = 0; i <= 4; i++) {
-    int y = 97 - (i * kGraphTickPixelSpan / 4);  // y=97,79,60,41,22
-    float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
-    M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(2, y - 3);
-    M5.Lcd.printf("%.2f", pressure);
-  }
-  
-  // CH1 scale marks (0.0MPa, 0.125MPa, 0.25MPa, 0.375MPa, 0.5MPa)
-  for (int i = 0; i <= 4; i++) {
-    int y = 197 - (i * kGraphTickPixelSpan / 4);  // y=197,179,160,141,122
-    float pressure = i * 0.125f;  // 0.0, 0.125, 0.25, 0.375, 0.5
-    M5.Lcd.drawLine(28, y, 30, y, WHITE);  // Tick mark
-    M5.Lcd.setCursor(2, y - 3);
-    M5.Lcd.printf("%.2f", pressure);
+  // Scale marks for both channels (0.0 to 0.5 MPa).
+  for (int channel = 0; channel < 2; channel++) {
+    for (int i = 0; i <= 4; i++) {
+      int y = 97 + channel * 100 - (i * kGraphTickPixelSpan / 4);
+      float pressure = i * 0.125f;
+      M5.Lcd.drawLine(28, y, 30, y, WHITE);
+      M5.Lcd.setCursor(2, y - 3);
+      M5.Lcd.printf("%.2f", pressure);
+    }
   }
   
   M5.Lcd.setTextColor(WHITE);  // Reset to white
@@ -106,13 +99,8 @@ void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available,
   M5.Lcd.setCursor(30, 225);
   
   // ADC Status
-  if (adc_available) {
-    M5.Lcd.setTextColor(GREEN);
-    M5.Lcd.print("ADC");
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("ADC!");
-  }
+  M5.Lcd.setTextColor(adc_available ? GREEN : RED);
+  M5.Lcd.print(adc_available ? "ADC" : "ADC!");
 
   M5.Lcd.setTextColor(WHITE);
   M5.Lcd.print(" ");
@@ -141,25 +129,15 @@ void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available,
   if (!network_enabled) { M5.Lcd.print("OFFLINE"); return; }
 
   // WiFi Status
-  if (wifi_connected) {
-    M5.Lcd.setTextColor(GREEN);
-    M5.Lcd.print("WiFi");
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("WiFi!");
-  }
+  M5.Lcd.setTextColor(wifi_connected ? GREEN : RED);
+  M5.Lcd.print(wifi_connected ? "WiFi" : "WiFi!");
   
   M5.Lcd.setTextColor(WHITE);
   M5.Lcd.print(" ");
   
   // AWS IoT Status
-  if (mqtt_connected) {
-    M5.Lcd.setTextColor(GREEN);
-    M5.Lcd.print("AWS");
-  } else {
-    M5.Lcd.setTextColor(RED);
-    M5.Lcd.print("AWS!");
-  }
+  M5.Lcd.setTextColor(mqtt_connected ? GREEN : RED);
+  M5.Lcd.print(mqtt_connected ? "AWS" : "AWS!");
   
   M5.Lcd.setTextColor(WHITE);
 }

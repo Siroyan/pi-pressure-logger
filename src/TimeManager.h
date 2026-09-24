@@ -24,9 +24,6 @@ public:
   
   String getCurrentTimeString();
   String getFormattedTimeString();  // Returns YYYY-MM-DD-hh-mm-ss format
-  
-  void printCurrentTime();
-
 };
 
 #endif // TIME_MANAGER_H
