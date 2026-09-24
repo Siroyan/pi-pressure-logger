@@ -1,80 +1,28 @@
 #include "WiFiManager.h"
 
-WiFiManager::WiFiManager(const char* wifi_ssid, const char* wifi_password) 
-  : wifi_connected(false), last_wifi_check(0), ssid(wifi_ssid), password(wifi_password) {}
+WiFiManager::WiFiManager(const char* wifi_ssid, const char* wifi_password)
+  : wifi_connected(false), ssid(wifi_ssid), password(wifi_password) {}
 
 void WiFiManager::init() {
-  connect();
-}
-
-void WiFiManager::connect() {
+  // 切断後の再試行はSDKに任せる。アプリ側からreconnect()を呼ぶと、
+  // 接続処理中やIPアドレス取得中でも切断してしまう。
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  
-  unsigned long start_time = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 10000) {
-    delay(500);
-    Serial.print(".");
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    wifi_connected = true;
-    Serial.println();
-    Serial.println("WiFi connected!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    wifi_connected = false;
-    Serial.println();
-    Serial.println("WiFi connection failed!");
-  }
+  wifi_connected = false;
+  checkConnection();
 }
 
 void WiFiManager::checkConnection() {
-  unsigned long now = millis();
-  if (now - last_wifi_check < wifi_check_interval) {
-    return;
-  }
-  
-  last_wifi_check = now;
-  
-  if (WiFi.status() != WL_CONNECTED && wifi_connected) {
-    // WiFi was connected but now disconnected
-    wifi_connected = false;
-    Serial.println("WiFi disconnected! Attempting reconnection...");
-  }
-  
-  if (!wifi_connected && WiFi.status() != WL_CONNECTED) {
-    reconnect();
+  const bool was_connected = wifi_connected.load();
+  // 非同期の再接続が完了した場合も拾えるよう、毎回接続状態を更新する。
+  wifi_connected = WiFi.status() == WL_CONNECTED;
+  if (wifi_connected && !was_connected) {
+    Serial.printf("WiFi connected: IP=%s, gateway=%s, DNS1=%s, DNS2=%s\n",
+                  WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
+                  WiFi.dnsIP(0).toString().c_str(), WiFi.dnsIP(1).toString().c_str());
+  } else if (!wifi_connected && was_connected) {
+    Serial.printf("WiFi not ready, status=%d; waiting for IP or SDK reconnection\n", static_cast<int>(WiFi.status()));
   }
 }
 
-void WiFiManager::reconnect() {
-  WiFi.reconnect();
-  Serial.print("Reconnecting to WiFi");
-  
-  unsigned long start_time = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 5000) {
-    delay(100);
-    Serial.print(".");
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    wifi_connected = true;
-    Serial.println();
-    Serial.println("WiFi reconnected!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println();
-    Serial.println("WiFi reconnection failed, will retry later");
-  }
-}
-
-bool WiFiManager::isConnected() {
-  return wifi_connected && (WiFi.status() == WL_CONNECTED);
-}
-
-IPAddress WiFiManager::getLocalIP() {
-  return WiFi.localIP();
-}
+bool WiFiManager::isConnected() { return wifi_connected.load(); }

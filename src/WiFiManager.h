@@ -2,12 +2,11 @@
 #define WIFI_MANAGER_H
 
 #include <WiFi.h>
+#include <atomic>
 
 class WiFiManager {
 private:
-  bool wifi_connected;
-  unsigned long last_wifi_check;
-  const int wifi_check_interval = 5000; // Check WiFi connection every 5 seconds
+  std::atomic<bool> wifi_connected;
   const char* ssid;
   const char* password;
   
@@ -17,11 +16,7 @@ public:
   void init();
   void checkConnection();
   bool isConnected();
-  IPAddress getLocalIP();
-  
-private:
-  void connect();
-  void reconnect();
+
 };
 
-#endif // WIFI_MANAGER_H
+#endif

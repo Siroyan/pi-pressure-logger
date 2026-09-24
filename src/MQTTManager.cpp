@@ -1,117 +1,114 @@
 #include "MQTTManager.h"
+#include <WiFi.h>
 
-MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
+namespace {
+constexpr uint32_t tcpConnectSeconds = 30;
+constexpr uint32_t tlsHandshakeSeconds = 30;
+constexpr uint16_t mqttConnectSeconds = 10;
+constexpr uint16_t runningIoSeconds = 3;
+}
+
+MQTTManager::MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port,
                          const char* name, const char* topic, const char* root_ca,
                          const char* cert, const char* key)
-  : wifiClient(wifi_client), client_mutex(xSemaphoreCreateRecursiveMutex()), mqtt_connected(false), last_mqtt_attempt(0), last_mqtt_send_time(0),
-    aws_iot_endpoint(endpoint), aws_iot_port(port), thing_name(name), aws_iot_topic(topic),
-    aws_root_ca(root_ca), device_cert(cert), device_key(key) {
-  
-  client = new PubSubClient(*wifiClient);
+  : wifiClient(wifi_client), client(*wifi_client), endpoint(endpoint), port(port),
+    thing(name), topic(topic), root(root_ca), cert(cert), key(key) {}
+
+bool MQTTManager::init() {
+  wifiClient->setCACert(root);
+  wifiClient->setCertificate(cert);
+  wifiClient->setPrivateKey(key);
+  wifiClient->setHandshakeTimeout(tlsHandshakeSeconds);
+  wifiClient->setTimeout(runningIoSeconds); // この固定版SDKでは秒単位で指定する。
+  client.setServer(endpoint,port);
+  client.setSocketTimeout(runningIoSeconds);
+  bool ready=client.setBufferSize(512);
+  portENTER_CRITICAL(&mux); status.ready=ready; portEXIT_CRITICAL(&mux);
+  return ready;
 }
 
-void MQTTManager::init() {
-  // Set certificates
-  wifiClient->setCACert(aws_root_ca);
-  wifiClient->setCertificate(device_cert);
-  wifiClient->setPrivateKey(device_key);
-  
-  client->setServer(aws_iot_endpoint, aws_iot_port);
-  client->setSocketTimeout(mqtt_socket_timeout);
-  
-  Serial.println("AWS IoT certificates loaded");
+MQTTStatus MQTTManager::snapshot() {
+  portENTER_CRITICAL(&mux); auto copy=status; portEXIT_CRITICAL(&mux); return copy;
+}
+bool MQTTManager::isReady() { return snapshot().ready; }
+bool MQTTManager::isConnected() { return snapshot().connected; }
+void MQTTManager::updateConnected(bool connected) {
+  portENTER_CRITICAL(&mux);
+  const bool lost = status.connected && !connected;
+  status.connected=connected;
+  portEXIT_CRITICAL(&mux);
+  if (lost) Serial.printf("AWS IoT disconnected, MQTT state=%d; reconnecting\n",client.state());
+}
+void MQTTManager::offer(const Telemetry& value) {
+  portENTER_CRITICAL(&mux); latest=value; pending=true; portEXIT_CRITICAL(&mux);
+}
+void MQTTManager::clearPending() {
+  portENTER_CRITICAL(&mux); pending=false; portEXIT_CRITICAL(&mux);
 }
 
-void MQTTManager::loop() {
-  xSemaphoreTakeRecursive(client_mutex, portMAX_DELAY);
-  if (!client->connected()) {
-    reconnect();
-  }
-  client->loop();
-  xSemaphoreGiveRecursive(client_mutex);
-}
-
-void MQTTManager::reconnect() {
-  if (millis() - last_mqtt_attempt < mqtt_retry_interval) {
+void MQTTManager::loop(bool network_ready) {
+  if (!isReady()) return;
+  if (!network_ready) {
+    if (client.connected()) client.disconnect();
+    updateConnected(false);
     return;
   }
-  
-  Serial.print("Attempting AWS IoT connection...");
-  
-  if (client->connect(thing_name)) {
-    mqtt_connected = true;
-    Serial.println("connected to AWS IoT Core");
-  } else {
-    mqtt_connected = false;
-    Serial.print("failed, rc=");
-    Serial.print(client->state());
-    Serial.println(" try again in 5 seconds");
-
-    char tls_error[128];
-    int tls_error_code = wifiClient->lastError(tls_error, sizeof(tls_error));
-    if (tls_error_code != 0) {
-      Serial.print("TLS error: ");
-      Serial.print(tls_error_code);
-      Serial.print(" (");
-      Serial.print(tls_error);
-      Serial.println(")");
+  if (!client.connected()) {
+    updateConnected(false);
+    if (connectAttempted && static_cast<uint32_t>(millis()-lastConnectAttempt)<5000) return;
+    connectAttempted=true;
+    // 接続時は通常の通信より長い猶予が要る。このSDKではTCP接続にも
+    // setTimeout()を使うため、試行後は通常時の値へ戻す。
+    wifiClient->setTimeout(tcpConnectSeconds);
+    client.setSocketTimeout(mqttConnectSeconds);
+    const uint32_t connectStarted = millis();
+    Serial.printf("Attempting AWS IoT connection... TCP=%lus, TLS=%lus, MQTT=%us\n",
+                  static_cast<unsigned long>(tcpConnectSeconds),
+                  static_cast<unsigned long>(tlsHandshakeSeconds), mqttConnectSeconds);
+    bool connected=client.connect(thing);
+    wifiClient->setTimeout(runningIoSeconds);
+    client.setSocketTimeout(runningIoSeconds);
+    lastConnectAttempt=millis();
+    const uint32_t elapsed = lastConnectAttempt-connectStarted;
+    updateConnected(connected);
+    if (!connected) {
+      Serial.printf("AWS connection failed after %lu ms, MQTT state=%d\n",
+                    static_cast<unsigned long>(elapsed), client.state());
+      Serial.printf("Network: WiFi=%d, IP=%s, gateway=%s, DNS1=%s, DNS2=%s\n",
+                    static_cast<int>(WiFi.status()), WiFi.localIP().toString().c_str(),
+                    WiFi.gatewayIP().toString().c_str(), WiFi.dnsIP(0).toString().c_str(),
+                    WiFi.dnsIP(1).toString().c_str());
+      char error[128] = {};
+      const int code = wifiClient->lastError(error, sizeof(error));
+      // 名前解決に失敗してもSDKがこのエラー値を消さないことがある。
+      if (code) Serial.printf("Last TLS error (may be from an earlier attempt): %d (%s)\n", code, error);
+      if (client.state() == -2)
+        Serial.println("Transport connection failed before MQTT. If 'DNS Failed' appears above, check DNS/network reachability first.");
+      return;
     }
+    Serial.printf("connected to AWS IoT Core after %lu ms\n", static_cast<unsigned long>(elapsed));
   }
-  last_mqtt_attempt = millis();
-}
+  client.loop();
+  updateConnected(client.connected());
+  if (!client.connected() || (publishAttempted && static_cast<uint32_t>(millis()-lastPublishAttempt)<500)) return;
 
-bool MQTTManager::isConnected() {
-  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
-    return mqtt_connected;
-  }
-  bool connected = isConnectedUnsafe();
-  xSemaphoreGiveRecursive(client_mutex);
-  return connected;
-}
-
-bool MQTTManager::isConnectedUnsafe() {
-  return mqtt_connected && client->connected();
-}
-
-void MQTTManager::publishData(float p0, float p1) {
-  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
-    return;
-  }
-  if (!isConnectedUnsafe()) {
-    xSemaphoreGiveRecursive(client_mutex);
-    return;
-  }
-  
-  String payload = "{";
-  payload += "\"timestamp\":" + String(millis());
-  payload += ",\"device\":\"" + String(thing_name) + "\"";
-  payload += ",\"ch0\":" + String(p0, 4);
-  payload += ",\"ch1\":" + String(p1, 4);
-  payload += "}";
-  
-  bool published = client->publish(aws_iot_topic, payload.c_str());
-  
-  if (published) {
-    Serial.println("Data published to AWS IoT [" + String(aws_iot_topic) + "]: " + payload);
-  } else {
-    Serial.println("Failed to publish data to AWS IoT [" + String(aws_iot_topic) + "]");
-  }
-  xSemaphoreGiveRecursive(client_mutex);
-}
-
-bool MQTTManager::canPublish(unsigned long now) {
-  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
-    return false;
-  }
-  bool can_publish = isConnectedUnsafe() && (now - last_mqtt_send_time >= mqtt_send_interval);
-  xSemaphoreGiveRecursive(client_mutex);
-  return can_publish;
-}
-
-void MQTTManager::updateLastSendTime(unsigned long now) {
-  if (xSemaphoreTakeRecursive(client_mutex, 0) != pdTRUE) {
-    return;
-  }
-  last_mqtt_send_time = now;
-  xSemaphoreGiveRecursive(client_mutex);
+  Telemetry value;
+  portENTER_CRITICAL(&mux);
+  bool have=pending;
+  if (have) { value=latest; pending=false; }
+  portEXIT_CRITICAL(&mux);
+  // 最新値だけを送り、過去のデータや送信失敗した古い値は再送しない。
+  const uint64_t now=static_cast<uint64_t>(esp_timer_get_time())/1000;
+  if (!have || !value.session || value.timestamp>now || now-value.timestamp>1000) return;
+  const String payload=telemetryPayload(value,thing);
+  bool success=client.publish(topic,payload.c_str());
+  bool connected=client.connected();
+  publishAttempted=true;
+  lastPublishAttempt=millis(); // 送信が遅延・失敗した場合も、完了時刻から再送間隔を測る。
+  portENTER_CRITICAL(&mux);
+  ++status.attempts; status.lastAttempt=lastPublishAttempt;
+  if (success) { ++status.successes; status.lastSuccess=lastPublishAttempt; }
+  portEXIT_CRITICAL(&mux);
+  updateConnected(connected);
+  if (!success) Serial.println("MQTT publish failed; latest-value delivery continues");
 }

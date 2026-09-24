@@ -1,54 +1,21 @@
-#ifndef STATE_MANAGER_H
-#define STATE_MANAGER_H
+#pragma once
+#include "RecordingQueue.h"
 
-#include <Arduino.h>
+enum SystemState { STANDBY, RECORDING, FILE_LIST };
 
-// Forward declarations
-class SDManager;
-class MQTTManager;
-class DisplayManager;
-class TimeManager;
-
-extern float ch0_buffer[];
-extern float ch1_buffer[];
-extern int buf_index;
-extern const int buffer_size;
-extern const int graph_gap_samples;
-
-enum SystemState {
-  STANDBY,
-  RECORDING,
-  FILE_LIST
-};
-
+// 画面側が管理する状態。周辺機器への処理は順序付きのキュー通知で伝える。
 class StateManager {
-private:
-  SystemState currentState;
-  unsigned long stateChangeTime;
-  SDManager* sdManager;
-  MQTTManager* mqttManager;
-  DisplayManager* displayManager;
-  
+  RecordingQueue& queue;
+  SystemState state=STANDBY;
+  bool recordingReady=false;
 public:
-  StateManager();
-  
-  void setManagers(SDManager* sd, MQTTManager* mqtt, DisplayManager* display, TimeManager* time = nullptr);
-  SystemState getCurrentState();
+  explicit StateManager(RecordingQueue& output) : queue(output) {}
+  void setRecordingReady(bool ready) { recordingReady=ready; }
+  SystemState getCurrentState() const { return state; }
+  // 終了通知をキューへ入れられない場合は録画状態を維持する。
   void transitionToStandby();
+  // 計測タスクの準備と開始通知の受付が揃った場合だけ録画状態へ移る。
   void transitionToRecording();
   void transitionToFileList();
   void toggleState();
-  void handleButtonB();
-  void processSensorData(float p0, float p1, unsigned long now);
-  void handleStateSpecificActions(float p0, float p1, unsigned long now);
-  
-private:
-  void onEnterStandby();
-  void onEnterRecording();
-  void onEnterFileList();
-  void handleStandbyState();
-  void handleRecordingState(float p0, float p1, unsigned long now);
-  void handleFileListState();
 };
-
-#endif // STATE_MANAGER_H

@@ -1,6 +1,6 @@
 # AWS IoT Core セットアップガイド
 
-> 最終確認日: 2026-09-22
+> 最終確認日: 2026-09-24
 >
 > AWS Management Consoleのメニュー名・画面構成・ボタン名は変更されることがあります。本書は上記日付時点のAWS公式ドキュメントを基準にしています。画面が一致しない場合は、本文中の公式リンクにある最新手順を優先してください。
 
@@ -14,7 +14,7 @@
 | MQTTクライアントID | `PressureLogger`（`thing_name`の値） |
 | 認証 | X.509デバイス証明書 |
 | プロトコル／ポート | MQTT over TLS／`8883` |
-| Publish先 | `pressure_logger/ch0`、`pressure_logger/ch1` |
+| Publish先 | `pressure_logger/data`（`aws_iot_topic`の値） |
 | 送信間隔 | 記録中に約500 ms間隔 |
 | Subscribe | デバイス側では使用しない |
 
@@ -63,8 +63,7 @@ AWS IoTコンソールで、現在の公式手順では **Security → Policies 
       "Effect": "Allow",
       "Action": "iot:Publish",
       "Resource": [
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch0",
-        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/ch1"
+        "arn:aws:iot:YOUR_REGION:YOUR_ACCOUNT_ID:topic/pressure_logger/data"
       ]
     }
   ]
@@ -130,7 +129,7 @@ aws iot describe-endpoint \
 a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com
 ```
 
-AWS IoTコンソールでは、設定画面の **Device data endpoint** から確認できます。導線が変わった場合は、[AWS公式のデバイス接続とエンドポイントの説明](https://docs.aws.amazon.com/iot/latest/developerguide/iot-connect-devices.html)を参照してください。
+AWS IoTコンソールでは、現在の[公式エンドポイント確認手順](https://docs.aws.amazon.com/iot/latest/developerguide/iot-quick-start-test-connection.html)は **Connect → Domain Configurations** で **Domain name** を確認する導線です。公式資料にはSettings経由の記述も残っています。画面名だけで判断せず、同じリージョンの`describe-endpoint --endpoint-type iot:Data-ATS`の結果を基準にしてください。
 
 設定には`https://`や`mqtts://`を付けず、ホスト名だけを使用します。
 
@@ -153,9 +152,10 @@ const char* aws_iot_endpoint =
     "a1b2c3d4e5f6g7-ats.iot.ap-northeast-1.amazonaws.com";
 const int aws_iot_port = 8883;
 const char* thing_name = "PressureLogger";
+const char* aws_iot_topic = "pressure_logger/data";
 ```
 
-`secure/config.h.example`の`aws_iot_topic`は現在の実装では参照されません。実際の送信先は`src/MQTTManager.cpp`に定義された2トピックです。
+`aws_iot_topic`が実際の送信先です。変更する場合は、上のポリシーの`topic/pressure_logger/data`と、MQTTテストクライアントの購読先も同じ値へ合わせてください。
 
 ### `secure/aws_certificates.h`
 
@@ -189,13 +189,10 @@ pio device monitor
 シリアルモニターは115200 baudです。正常に接続すると、次のようなメッセージが表示されます。
 
 ```text
-WiFi connected!
-Time synchronized successfully
-AWS IoT certificates loaded
 connected to AWS IoT Core
 ```
 
-LCDの`AWS`表示も緑になります。
+LCDの`WiFi`と`AWS`表示も緑になります。NTPは非同期に同期し、時計の確定後にTLS接続を開始します。NTP不達でも起動処理は待機しません。
 
 ## 7. MQTTメッセージを確認する
 
@@ -203,27 +200,26 @@ LCDの`AWS`表示も緑になります。
 
 1. Thingと同じリージョンを選択していることを確認する。
 2. **Subscribe to a topic**を開く。
-3. Topic filterに`pressure_logger/#`を入力する。
+3. Topic filterに`pressure_logger/data`を入力する。
 4. **Subscribe**を選択する。
 5. M5StackのAボタンを押して記録状態にする。
 
 この実装は記録状態のときだけMQTT Publishを行います。待機状態ではAWSへ接続済みでも送信しません。
 
-正常なら、約500 msごとに次の2トピックへ同じJSONが届きます。
-
-- `pressure_logger/ch0`
-- `pressure_logger/ch1`
+正常なら、約500 msごとに`pressure_logger/data`へ両チャンネルを含むJSONが1件届きます。`ch0`と`ch1`の単位はMPaで、波形表示の0〜0.5 MPaという範囲には制限しません。
 
 ```json
 {
   "timestamp": 123456789,
   "device": "PressureLogger",
+  "session": 1,
+  "sequence": 50,
   "ch0": 0.1234,
   "ch1": 0.2345
 }
 ```
 
-`timestamp`はUnix時刻ではなく、M5Stack起動後の`millis()`です。
+`timestamp`はUnix時刻ではなく、取得時の起動後64bitミリ秒です。`session`と`sequence`は起動中の記録セッションとサンプルの番号です。
 
 ## 8. A-03の通信分離を確認する
 
@@ -234,16 +230,19 @@ LCDの`AWS`表示も緑になります。
 3. シリアルで再接続処理を確認する。
 4. Wi-Fiを再開する。
 5. `connected to AWS IoT Core`が再表示され、MQTT受信が再開することを確認する。
-6. `Dropped pressure samples: N`が表示された場合は、キュー満杯による欠測数`N`を記録する。
+6. シリアルの`Session ... storage queue high-water ... total dropped ...`とCSV末尾のセッション別欠落数を記録する。
 
-A-03はセンサー取得を通信保守タスクから分離しますが、AWS切断中のMQTTデータを再送する機能ではありません。切断中のクラウドデータは欠測します。キューは512サンプル、100 Hzで約5.12秒分です。通信断の長さ、欠測数、再接続までの時間を記録してください。
+A-03はセンサー取得を通信保守タスクから分離しますが、AWS切断中のMQTTデータを再送する機能ではありません。切断中のクラウドデータは欠測します。保存FIFOは512件（開始／停止のための予約枠を含む）で、100 Hzなら約5秒分です。UI・SD保存・通信は別経路で動作し、通信断中の全サンプルを保持するキューではありません。通信断の長さ、欠測数、再接続までの時間を記録してください。
+
+MQTTはQoS 0で最新値を約500 ms間隔に配信します。100 Hzの全履歴を送る仕様ではありません。古い値の再送はせず、1秒を越えた値は送信しません。送信失敗でも試行間隔を500 ms空け、成功回数・成功時刻は失敗時に更新しません。PubSubClientの成功はAWS側での保存を保証する受領確認ではありません。セッション番号は再起動でリセットされます。
 
 ## トラブルシューティング
 
 ### Wi-Fiへ接続できない
 
 - `ssid`と`password`を確認する。
-- シリアルの`WiFi connection failed!`を確認する。
+- LCDの`WiFi!`表示を確認する。初回は非同期で接続し、その後の再接続はESP32 SDKの自動再接続機能へ任せる。アプリ側から5秒ごとに強制再接続する処理は、接続途中やIP取得待ちを中断するため廃止した。
+- AP不在・一時的な切断など、SDKが対象とする失敗では自動再接続する。認証失敗等の再試行可否はSDKの理由別ポリシーに従う。誤った認証情報は修正する必要がある。
 
 ### AWS表示が赤い、またはMQTT接続に失敗する
 
@@ -254,12 +253,28 @@ A-03はセンサー取得を通信保守タスクから分離しますが、AWS�
 - 証明書・秘密鍵・Root CAの組み合わせを確認する。
 - NTP同期とポート8883への外向き通信を確認する。
 
+### `DNS Failed` / `MQTT state=-2`、接続後の切断を繰り返す
+
+`DNS Failed`はホスト名をIPアドレスへ変換できず、TLS・MQTT認証へ進めなかったことを示す。`MQTT state=-2`だけではDNS／TCP／TLSのどこで失敗したかは判別できない。証明書変更の前に、直前のSDKログと、失敗時の`Network: WiFi=..., IP=..., gateway=..., DNS1=..., DNS2=...`を確認する。`WiFi=3`は無線接続済みを示すが、DNSやインターネット到達性を保証しない。
+
+- `WiFi not ready`が先に出る場合はWi-Fi接続またはIPアドレスが失われている。`status=0`はIP取得待ち等、`status=6`は未接続を示す。電波状態やアクセスポイントのDHCPも確認する。
+- `AWS IoT disconnected`だけの場合も、回線・TCP・MQTTのどこで切れたかはそのログだけでは確定できない。次の再接続時のSDKログを合わせて確認する。
+- `DNS1`と`DNS2`が両方`0.0.0.0`の場合はDHCPのDNS配布を確認する。DNS2だけが空でも異常とは限らない。
+- 同じWi-FiのPCで`nslookup <AWSエンドポイント> <ログのDNS1>`を実行し、端末が使うDNSサーバーから解決できるか比較する。PC自身のDNSでの成功だけではESP32側の到達性は証明できない。
+- 別のWi-Fiやテザリングでも比較する。再試行で一度成功しても、その後にDNS失敗や切断が続く場合は解消したとは判断しない。
+
+接続失敗時は処理完了から5秒後に再試行する。接続時の設定はTCP接続30秒、TLSハンドシェイク30秒、MQTT応答待ち10秒。接続試行後は成功・失敗のどちらでも通常通信の3秒設定へ戻す。使用SDKの名前解決待ちはこれらとは別なので、ログの間隔は5秒より長くなる。接続試行の成功・失敗ログに全体の経過ミリ秒を出す。段階ごとの設定であり、試行全体が30秒以内に終了する保証ではない。
+
+以前のTCP／TLSの3秒制限は遅い回線で接続成立前に打ち切る可能性があるため、通常通信と接続時の待ち時間を分離した。`start_ssl_client: -1`はTCP／TLSのタイムアウト等でも発生する汎用エラーで、単独では原因を断定できない。今回の変更はDNS不達やポート8883の遮断自体を解消するものではない。`Last TLS error`はSDKに保存された直近のエラーで、DNS失敗時には前回の値が残る場合がある。DNS設定やAWSのIPアドレスをコードで固定する変更は行っていない。
+
+参考: [使用SDKのDNS実装](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/WiFi/src/WiFiGeneric.cpp)、[PubSubClientの接続処理](https://github.com/knolleary/pubsubclient/blob/v2.8/src/PubSubClient.cpp)。
+
 ### 接続済みだがメッセージが届かない
 
 - M5Stackが記録状態か確認する。
-- MQTTテストクライアントのリージョンと`pressure_logger/#`を確認する。
-- ポリシーが両トピックへの`iot:Publish`を許可していることを確認する。
-- シリアルの`Data published to AWS IoT`または`Failed to publish data`を確認する。
+- MQTTテストクライアントのリージョンと`pressure_logger/data`を確認する。
+- ポリシーが設定した`pressure_logger/data`への`iot:Publish`を許可していることを確認する。
+- シリアルの`MQTT publish failed`と受信側の`session`・`sequence`を確認する。
 
 ### `Not authorized`になる
 

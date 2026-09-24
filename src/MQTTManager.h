@@ -1,45 +1,46 @@
-#ifndef MQTT_MANAGER_H
-#define MQTT_MANAGER_H
-
+#pragma once
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <freertos/semphr.h>
+#include <freertos/FreeRTOS.h>
+#include "Telemetry.h"
 
-class MQTTManager {
-private:
-  WiFiClientSecure* wifiClient;
-  PubSubClient* client;
-  SemaphoreHandle_t client_mutex;
-  volatile bool mqtt_connected;
-  unsigned long last_mqtt_attempt;
-  unsigned long last_mqtt_send_time;
-  const int mqtt_retry_interval = 5000;
-  const int mqtt_send_interval = 500;
-  const int mqtt_socket_timeout = 3;
-  
-  const char* aws_iot_endpoint;
-  int aws_iot_port;
-  const char* thing_name;
-  const char* aws_iot_topic;
-  const char* aws_root_ca;
-  const char* device_cert;
-  const char* device_key;
-  
-public:
-  MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port, 
-              const char* name, const char* topic, const char* root_ca,
-              const char* cert, const char* key);
-  
-  void init();
-  void loop();
-  bool isConnected();
-  void publishData(float p0, float p1);
-  bool canPublish(unsigned long now);
-  void updateLastSendTime(unsigned long now);
-  
-private:
-  void reconnect();
-  bool isConnectedUnsafe();
+struct MQTTStatus {
+  bool ready=false, connected=false;
+  uint32_t attempts=0, successes=0, lastAttempt=0, lastSuccess=0;
 };
 
-#endif // MQTT_MANAGER_H
+class MQTTManager {
+  WiFiClientSecure* wifiClient;
+  PubSubClient client; // 通信タスクだけがこのクライアントの入出力を行う。
+  portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+  Telemetry latest;
+  bool pending=false;
+  MQTTStatus status;
+  bool connectAttempted=false;
+  uint32_t lastConnectAttempt=0;
+  bool publishAttempted=false;
+  uint32_t lastPublishAttempt=0;
+  const char* endpoint;
+  int port;
+  const char* thing;
+  const char* topic;
+  const char* root;
+  const char* cert;
+  const char* key;
+  void updateConnected(bool connected);
+public:
+  MQTTManager(WiFiClientSecure* wifi_client, const char* endpoint, int port,
+              const char* name, const char* topic, const char* root_ca,
+              const char* cert, const char* key);
+  // 送信バッファを確保する。trueはMQTT接続済みを意味しない。
+  bool init();
+  bool isReady();
+  bool isConnected();
+  MQTTStatus snapshot();
+  // 送信待ちの値を最新の1件で上書きする。古い値を蓄積しない。
+  void offer(const Telemetry& value);
+  void clearPending();
+  // 通信タスクから呼ぶ。接続処理では同期的に待つため、画面側からは呼ばない。
+  // network_readyがfalseなら既存の接続を切り、1秒を超えた値は送信しない。
+  void loop(bool network_ready=true);
+};
