@@ -3,10 +3,13 @@
 
 #include <WiFi.h>
 #include <time.h>
+#include <atomic>
 
 class TimeManager {
 private:
-  bool time_synced;
+  std::atomic<bool> time_synced;
+  bool requested = false, was_connected = false;
+  uint32_t last_attempt = 0;
   const char* ntp_server;
   long gmt_offset_sec;
   int daylight_offset_sec;
@@ -18,15 +21,14 @@ public:
   
   bool init();
   bool syncTime();
+  void poll();
   bool isTimeSynced();
   
   String getCurrentTimeString();
   String getFormattedTimeString();  // Returns YYYY-MM-DD-hh-mm-ss format
   
   void printCurrentTime();
-  
-private:
-  bool waitForTimeSync(int timeout_seconds = 10);
+
 };
 
 #endif // TIME_MANAGER_H
