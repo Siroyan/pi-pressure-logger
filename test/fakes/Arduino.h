@@ -35,6 +35,9 @@ public:
   friend bool operator<(const String& a,const String& b) { return a.s<b.s; }
 };
 inline uint32_t fake_millis = 0;
+inline uint32_t fake_micros = 0;
+inline unsigned long micros() { return fake_micros; }
+inline void delayMicroseconds(unsigned long us) { fake_micros += us; }
 inline unsigned long millis() { return fake_millis; }
 inline void delay(unsigned long ms) { fake_millis += ms; }
 inline bool fake_time_valid = false;
@@ -45,9 +48,12 @@ inline bool getLocalTime(tm* result, uint32_t timeout = 5000) {
 inline unsigned fake_ntp_requests = 0;
 inline void configTime(long, int, const char*) { ++fake_ntp_requests; }
 struct FakeSerial {
-  template<class T> void print(const T&) {}
-  template<class T> void println(const T&) {}
-  void println() {}
-  template<class... T> void printf(const char*, T...) {}
+  std::string output;
+  template<class T> void print(const T& value) { output+=String(value).c_str(); }
+  template<class T> void println(const T& value) { print(value); output+='\n'; }
+  void println() { output+='\n'; }
+  template<class... T> void printf(const char* format, T... args) {
+    char buffer[1024]; std::snprintf(buffer,sizeof(buffer),format,args...); output+=buffer;
+  }
 };
 inline FakeSerial Serial;

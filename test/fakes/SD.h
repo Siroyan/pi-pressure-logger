@@ -2,7 +2,9 @@
 #include "FS.h"
 constexpr int CARD_NONE = 0;
 struct FakeSD {
-  bool begin() { return disk.mounted; }
+  template<class Bus> bool begin(unsigned cs, Bus&, unsigned) {
+    disk.mountPins.push_back(cs); return disk.mounted && cs==4;
+  }
   void end() {}
   int cardType() { return disk.mounted ? 1 : CARD_NONE; }
   bool exists(const char* p) { return disk.files.count(p); }

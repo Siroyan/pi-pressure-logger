@@ -4,16 +4,22 @@
 #include <SD.h>
 #include <FS.h>
 #include <vector>
+#include <atomic>
+#include "PressureSample.h"
 
 class TimeManager;
 
 class SDManager {
 private:
-  bool sd_available;
+  std::atomic<bool> sd_available;
   String log_filename;
-  unsigned long session_start_time;
-  bool recording;
-  bool write_error;
+  uint64_t session_start_time;
+  std::atomic<bool> recording;
+  std::atomic<bool> write_error;
+  File log_file;
+  char batch[1024];
+  size_t batch_size = 0;
+  uint32_t last_flush = 0;
   TimeManager* timeManager;
   
 public:
@@ -25,9 +31,12 @@ public:
   bool isRecording();
   bool hasWriteError();
   
-  bool startRecording();
+  bool startRecording(uint64_t started_at);
   void stopRecording();
-  bool logData(float p0, float p1);
+  bool logData(const PressureSample& sample);
+  bool flush();
+  void poll();
+  void writeSummary(uint32_t session, uint32_t dropped, uint32_t high_water);
   
   // File management functions
   std::vector<String> getLogFileList();
@@ -38,6 +47,10 @@ public:
 private:
   String createLogFile();
   String createUniqueFilename(const String& filename);
+  bool writeLine(File& file, const String& line);
+  void failWrite();
+  bool append(const String& bytes);
+  bool writeBatch();
 };
 
 #endif // SD_MANAGER_H

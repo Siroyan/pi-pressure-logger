@@ -23,6 +23,7 @@ SystemState StateManager::getCurrentState() {
 
 void StateManager::transitionToStandby() {
   if (currentState != STANDBY) {
+    if (currentState == RECORDING && (!recordingQueue || !recordingQueue->stop())) return;
     currentState = STANDBY;
     stateChangeTime = millis();
     onEnterStandby();
@@ -31,6 +32,7 @@ void StateManager::transitionToStandby() {
 
 void StateManager::transitionToRecording() {
   if (recordingReady && currentState == STANDBY) {
+    if (!recordingQueue || !recordingQueue->start()) return;
     currentState = RECORDING;
     stateChangeTime = millis();
     onEnterRecording();
@@ -38,7 +40,7 @@ void StateManager::transitionToRecording() {
 }
 
 void StateManager::transitionToFileList() {
-  if (currentState != FILE_LIST) {
+  if (currentState == STANDBY) {
     currentState = FILE_LIST;
     stateChangeTime = millis();
     onEnterFileList();
@@ -65,27 +67,14 @@ void StateManager::handleButtonB() {
 }
 
 void StateManager::onEnterStandby() {
-  if (mqttManager) mqttManager->clearPending();
-  if (sdManager && sdManager->isRecording()) {
-    sdManager->stopRecording();
-  }
   
   // If coming from FILE_LIST, restore the waveform display
-  if (displayManager) {
-    displayManager->init();
-  }
+  // Screen restoration is scheduled by the UI when the shared SPI bus is free.
   
   Serial.println("State: STANDBY");
 }
 
 void StateManager::onEnterRecording() {
-  ++recordingSession; if (!recordingSession) ++recordingSession;
-  sequence = 0;
-  if (sdManager && sdManager->isAvailable()) {
-    if (!sdManager->startRecording()) {
-      Serial.println("SD recording could not be started; MQTT publishing remains active");
-    }
-  }
   Serial.println("State: RECORDING");
 }
 
@@ -106,36 +95,7 @@ void StateManager::processSensorData(float p0, float p1, uint64_t now) {
   }
   
   // Handle state-specific actions
-  handleStateSpecificActions(p0, p1, now);
+  // Recording is consumed separately from the current screen state.
   
   buf_index = (buf_index + 1) % buffer_size;
-}
-
-void StateManager::handleStateSpecificActions(float p0, float p1, uint64_t now) {
-  if (currentState == STANDBY) {
-    handleStandbyState();
-  } else if (currentState == RECORDING) {
-    handleRecordingState(p0, p1, now);
-  } else if (currentState == FILE_LIST) {
-    handleFileListState();
-  }
-}
-
-void StateManager::handleStandbyState() {
-  // In standby: only display data, no logging or MQTT
-}
-
-void StateManager::handleRecordingState(float p0, float p1, uint64_t now) {
-  // Log data to SD card
-  if (sdManager && sdManager->isRecording()) {
-    sdManager->logData(p0, p1);
-  }
-  
-  // Publish data via MQTT (at 500ms intervals)
-  if (mqttManager) mqttManager->offer({p0,p1,now,recordingSession,++sequence});
-}
-
-void StateManager::handleFileListState() {
-  // File list state: no sensor data processing needed
-  // Navigation and file operations handled by button inputs
 }
