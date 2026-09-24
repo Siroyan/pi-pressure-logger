@@ -100,7 +100,7 @@ void DisplayManager::drawPressureText(float p0, float p1) {
 
 void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
                                           bool sd_error,
-                                          bool wifi_connected, bool mqtt_connected) {
+                                          bool wifi_connected, bool mqtt_connected, bool network_enabled) {
   M5.Lcd.fillRect(30, 225, 150, 10, BLACK);  // Clear area
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(30, 225);
@@ -138,6 +138,8 @@ void DisplayManager::drawConnectionStatus(bool adc_available, bool sd_available,
   M5.Lcd.setTextColor(WHITE);
   M5.Lcd.print(" ");
   
+  if (!network_enabled) { M5.Lcd.print("OFFLINE"); return; }
+
   // WiFi Status
   if (wifi_connected) {
     M5.Lcd.setTextColor(GREEN);

@@ -11,8 +11,9 @@ struct FakeLcd {
   std::vector<Rect> rectangles;
   std::vector<Text> text;
   int x=0,y=0;
+  unsigned clears=0;
   void setRotation(int) {}
-  void fillScreen(unsigned) { rectangles.clear(); text.clear(); }
+  void fillScreen(unsigned) { ++clears; rectangles.clear(); text.clear(); }
   void setTextColor(unsigned) {}
   void setTextSize(unsigned) {}
   void setCursor(int a,int b) { x=a; y=b; }
@@ -24,5 +25,16 @@ struct FakeLcd {
     char value[256]; std::snprintf(value,sizeof(value),fmt,args...); print(String(value));
   }
 };
-struct FakeM5 { FakeLcd Lcd; };
+struct FakeButton {
+  bool pressed=false,released=false;
+  bool wasPressed() const { return pressed; }
+  bool wasReleased() const { return released; }
+};
+struct FakeM5 {
+  FakeLcd Lcd;
+  FakeButton BtnA,BtnB,BtnC;
+  bool sdAutoInit=true;
+  void begin(bool=true,bool sd=true) { sdAutoInit=sd; }
+  void update() {}
+};
 inline FakeM5 M5;

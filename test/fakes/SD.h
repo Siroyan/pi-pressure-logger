@@ -16,6 +16,6 @@ struct FakeSD {
     else if (std::string(mode)==FILE_READ && !exists(p)) return {};
     return File(p);
   }
-  bool remove(const String& p) { return disk.files.erase(p.c_str())==1; }
+  bool remove(const String& p) { return !disk.fail_remove && disk.files.erase(p.c_str())==1; }
 };
 inline FakeSD SD;

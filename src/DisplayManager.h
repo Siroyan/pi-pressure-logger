@@ -29,7 +29,7 @@ public:
   void drawPressureText(float p0, float p1);
   void drawConnectionStatus(bool adc_available, bool sd_available, bool sd_recording,
                             bool sd_error,
-                            bool wifi_connected, bool mqtt_connected);
+                            bool wifi_connected, bool mqtt_connected, bool network_enabled = true);
   
   // File list display functions
   void drawFileList(const std::vector<String>& files, const std::vector<long>& fileSizes);

@@ -11,7 +11,7 @@ constexpr const char* FILE_READ = "r";
 struct FakeDisk {
   std::map<std::string,std::string> files;
   bool mounted=true, fail_open=false;
-  bool flush_error=false;
+  bool flush_error=false, fail_remove=false;
   size_t capacity=std::numeric_limits<size_t>::max();
   unsigned opens=0, closes=0;
   std::vector<unsigned> mountPins;

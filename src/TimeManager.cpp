@@ -2,7 +2,7 @@
 #include "RtcClock.h"
 
 TimeManager::TimeManager(const char* server, long gmt_offset, int daylight_offset)
-  : time_synced(false), ntp_server(server), gmt_offset_sec(gmt_offset), daylight_offset_sec(daylight_offset) {}
+  : ntp_server(server), gmt_offset_sec(gmt_offset), daylight_offset_sec(daylight_offset) {}
 
 bool TimeManager::init() { poll(); return isTimeSynced(); }
 
@@ -25,7 +25,6 @@ void TimeManager::poll() {
 bool TimeManager::isTimeSynced() {
   struct tm info;
   bool valid = readRtcTime(info) && info.tm_year > 120;
-  time_synced = valid;
   return valid;
 }
 

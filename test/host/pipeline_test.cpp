@@ -33,13 +33,13 @@ TEST(stalled_storage_keeps_buttons_display_queue_and_network_independent) {
 TEST(recording_holds_one_file_and_flushes_at_deadline_and_stop) {
   disk={}; fake_millis=100;
   SDManager sd; CHECK(sd.init()); CHECK(sd.startRecording(100));
-  CHECK(disk.opens==1); CHECK(disk.closes==0);
+  CHECK(disk.opens==2); CHECK(disk.closes==1);
   for (unsigned i=0;i<100;++i) CHECK(sd.logData({0.1f,0.2f,100+i*10}));
-  CHECK(disk.opens==1); CHECK(disk.closes==0);
+  CHECK(disk.opens==2); CHECK(disk.closes==1);
   fake_millis=1100; sd.poll();
   CHECK(disk.files.begin()->second.find("990,0.1000,0.2000")!=std::string::npos);
   CHECK(sd.logData({0.3f,0.4f,1100})); sd.stopRecording();
-  CHECK(disk.closes==1);
+  CHECK(disk.closes==2);
   CHECK(disk.files.begin()->second.find("1000,0.3000,0.4000")!=std::string::npos);
 }
 
@@ -57,4 +57,19 @@ TEST(file_operations_are_queued_and_run_only_after_recording_drains) {
   CHECK(service.requestDelete(files[0])); CHECK(disk.files.size()==1);
   service.step(); CHECK(service.takeResult(files,sizes,success));
   CHECK(success && files.empty() && disk.files.empty());
+}
+
+TEST(storage_resource_allocation_failures_leave_public_operations_safe) {
+  for(unsigned failure=0;failure<3;++failure) {
+    disk={}; SDManager sd; CHECK(sd.init()); RecordingQueue queue; CHECK(queue.init(8));
+    if (failure==0) queue_fail_after=0;
+    else semaphore_fail_after=failure-1;
+    StorageService storage(sd,queue); CHECK(!storage.init());
+    queue_fail_after=-1; semaphore_fail_after=-1;
+    CHECK(!storage.ready() && !storage.requestList());
+    CHECK(!storage.requestDelete("pressure_log_1.csv") && !storage.tryBeginDisplay());
+    storage.step();
+    std::vector<String> files; std::vector<long> sizes; bool success;
+    CHECK(!storage.takeResult(files,sizes,success)); CHECK(disk.opens==0);
+  }
 }

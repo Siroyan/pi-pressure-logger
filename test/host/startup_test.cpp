@@ -4,16 +4,11 @@
 #include "SDManager.h"
 #include "MQTTManager.h"
 
-// Legacy graph storage still owned by main, removed when ownership is refactored.
-float ch0_buffer[2000]={}, ch1_buffer[2000]={};
-int buf_index=0;
-extern const int buffer_size=2000, graph_gap_samples=100;
-
 TEST(resource_creation_failures_disable_recording_without_disabling_file_screen) {
   for(unsigned failure=0;failure<5;++failure) {
     unsigned samplingCalls=0,networkCalls=0;
     auto result=startRuntime(failure!=0,failure!=3,
-      [&] { return failure!=1; },
+      [&] { return failure!=1; }, [] { return true; }, [] { return true; },
       [&] { ++samplingCalls; return failure!=2; },
       [&] { ++networkCalls; return failure!=4; });
     CHECK(result.error!=nullptr);
@@ -22,7 +17,7 @@ TEST(resource_creation_failures_disable_recording_without_disabling_file_screen)
     CHECK(networkCalls==(failure==3 ? 0u:1u));
     disk={}; SDManager sd; CHECK(sd.init());
     RecordingQueue queue; CHECK(queue.init(16));
-    StateManager state; state.setRecordingQueue(&queue); state.setManagers(&sd,nullptr,nullptr);
+    StateManager state(queue);
     state.setRecordingReady(result.acquisition); state.transitionToRecording();
     CHECK((state.getCurrentState()==RECORDING)==result.acquisition);
     if (!result.acquisition) { CHECK(disk.opens==0); state.transitionToFileList(); CHECK(state.getCurrentState()==FILE_LIST); }
@@ -41,7 +36,7 @@ TEST(mqtt_buffer_allocation_failure_is_safe_for_all_public_operations) {
 TEST(storage_startup_failure_prevents_acquisition_but_allows_network_diagnostics) {
   for (unsigned fail=0; fail<4; ++fail) {
     unsigned sampling=0,storage=0;
-    auto status=startStorageRuntime(true,true,[&] { return fail!=0; },
+    auto status=startRuntime(true,true,[&] { return fail!=0; },
       [&] { return fail!=1; }, [&] { ++storage; return fail!=2; },
       [&] { ++sampling; return fail!=3; }, [] { return true; });
     CHECK(!status.acquisition && status.network && status.error);
