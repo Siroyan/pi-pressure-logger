@@ -7,8 +7,6 @@
 class WiFiManager {
 private:
   std::atomic<bool> wifi_connected;
-  uint32_t last_wifi_check;
-  const int wifi_check_interval = 5000; // Check WiFi connection every 5 seconds
   const char* ssid;
   const char* password;
   
