@@ -5,6 +5,10 @@
 class TwoWire {
 public:
   bool nack=false, neverReady=false, badConfig=false, shortRead=false, failWrite=false;
+  bool initialized=false, failBegin=false, transmitting=false;
+  unsigned beginCalls=0, invalidTransfers=0;
+  unsigned writes=0, failWriteAt=0;
+  int sda=-1, scl=-1;
   unsigned timeout=0, operations=0, failAt=0;
   uint32_t transferUs=100;
   uint16_t config=0;
@@ -13,14 +17,29 @@ public:
   std::vector<uint8_t> tx;
   std::deque<int> rx;
   std::vector<uint16_t> configs;
+  bool begin(int dataPin, int clockPin) {
+    ++beginCalls; sda=dataPin; scl=clockPin;
+    initialized=!failBegin;
+    return initialized;
+  }
   void setTimeOut(unsigned ms) { timeout=ms; }
-  void beginTransmission(uint8_t) { tx.clear(); }
-  size_t write(uint8_t byte) { if (failWrite) return 0; tx.push_back(byte); return 1; }
+  void beginTransmission(uint8_t) {
+    if (!initialized || transmitting) { ++invalidTransfers; return; }
+    transmitting=true; tx.clear();
+  }
+  size_t write(uint8_t byte) {
+    ++writes;
+    if (!initialized || failWrite || writes==failWriteAt) return 0;
+    tx.push_back(byte); return 1;
+  }
   size_t write(const uint8_t* bytes,size_t size) {
-    if (failWrite) return 0;
+    ++writes;
+    if (!initialized || failWrite || writes==failWriteAt) return 0;
     tx.insert(tx.end(),bytes,bytes+size); return size;
   }
   int endTransmission(bool=true) {
+    if (!initialized || !transmitting) { ++invalidTransfers; return 4; }
+    transmitting=false;
     ++operations; fake_micros+=transferUs;
     if (nack || operations==failAt) return 2;
     if (!tx.empty()) reg=tx[0];
@@ -28,6 +47,7 @@ public:
     return 0;
   }
   uint8_t requestFrom(uint8_t,uint8_t) {
+    if (!initialized || transmitting) { ++invalidTransfers; return 0; }
     ++operations; fake_micros+=transferUs; rx.clear();
     if (nack || operations==failAt || shortRead) return 0;
     uint16_t value;

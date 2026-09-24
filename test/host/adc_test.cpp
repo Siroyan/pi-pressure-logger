@@ -5,9 +5,39 @@ TEST(adc_pair_preserves_conversion_gain_and_channel_selection) {
   TwoWire bus; ADCReader reader(bus); reader.init(); fake_micros=0;
   float p0=99,p1=99;
   CHECK(reader.readPair(p0,p1)); CHECK(bus.timeout==2);
+  CHECK(bus.beginCalls==1 && bus.sda==21 && bus.scl==22);
+  CHECK(bus.invalidTransfers==0);
   CHECK(std::abs(p0-0.05f)<0.00001f); CHECK(std::abs(p1-0.65f)<0.00001f);
   CHECK(bus.configs.size()==2 && bus.configs[0]==0xC1C3 && bus.configs[1]==0xD1C3);
   bus.counts[0]=-1; CHECK(reader.readPair(p0,p1)); CHECK(p0<-.25f);
+}
+
+TEST(adc_bus_initialization_failure_retries_without_invalid_transfers) {
+  TwoWire bus; bus.failBegin=true;
+  RecordingQueue queue; CHECK(queue.init(16));
+  AcquisitionService service(queue,bus); service.init();
+  fake_millis=0; service.step();
+  CHECK(!service.isAvailable()); CHECK(bus.operations==0 && bus.invalidTransfers==0);
+  const unsigned attempts=bus.beginCalls;
+  CHECK(attempts>0);
+  bus.failBegin=false;
+  fake_millis=999; service.step(); CHECK(bus.beginCalls==attempts);
+  fake_millis=1000; service.step(); CHECK(service.isAvailable());
+  CHECK(bus.beginCalls==attempts+1 && bus.invalidTransfers==0);
+  RecordEvent event; CHECK(!queue.receive(event));
+  service.step(); CHECK(bus.beginCalls==attempts+1);
+}
+
+TEST(adc_write_failure_releases_transaction_for_next_attempt) {
+  // Config write plus status/result register pointers for both channels.
+  for (unsigned fail=1; fail<=6; ++fail) {
+    TwoWire bus; ADCReader reader(bus); reader.init();
+    float p0=99,p1=99;
+    bus.failWriteAt=fail; CHECK(!reader.readPair(p0,p1));
+    CHECK(p0==99 && p1==99 && !bus.transmitting);
+    bus.failWriteAt=0; CHECK(reader.readPair(p0,p1));
+    CHECK(bus.invalidTransfers==0);
+  }
 }
 
 TEST(adc_transfer_failure_at_any_stage_never_returns_partial_pair) {
